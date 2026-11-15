@@ -1,0 +1,301 @@
+import "server-only";
+// 手機 App：配對、裝置驗證、推送通知、給 App 看的資料
+import { db } from "./db";
+import { taipeiDate } from "./dates";
+import { listProjects } from "./projects";
+import { listOffice } from "./office";
+import { displayStatus, staffOf } from "./officeLogic";
+import { CATEGORY_LABEL, type Category } from "./labels";
+import {
+  dueReminders,
+  newDeviceToken,
+  newPairCode,
+  normalizePairCode,
+  PAIR_TTL_MS,
+  parseUiTheme,
+  sha256,
+  todayEventsPush,
+  type PushMessage,
+  type TimedEvent,
+} from "./appLogic";
+
+export type AppDevice = { id: string; name: string; push_token: string | null; created_at: string; last_seen_at: string };
+
+const PAIR_KEY = "app_pair";
+
+// ---------- 配對 ----------
+
+/** 產生一組新的配對碼（10 分鐘內有效、用一次就失效；舊的那組直接作廢） */
+export async function createPairCode(now = Date.now()): Promise<{ code: string; expiresAt: number }> {
+  const code = newPairCode();
+  const expiresAt = now + PAIR_TTL_MS;
+  const { error } = await db().from("settings").upsert({ key: PAIR_KEY, value: JSON.stringify({ hash: sha256(code), exp: expiresAt }), updated_at: new Date(now).toISOString() });
+  if (error) throw error;
+  return { code, expiresAt };
+}
+
+/** App 送來配對碼：對了就建立裝置，回傳登入憑證（只有這一次看得到原文） */
+export async function redeemPairCode(raw: unknown, name: unknown, now = Date.now()): Promise<{ token: string; deviceId: string } | null> {
+  const code = normalizePairCode(raw);
+  if (code.length < 6) return null;
+  const { data } = await db().from("settings").select("value").eq("key", PAIR_KEY).maybeSingle();
+  if (!data) return null;
+  let saved: { hash?: string; exp?: number } = {};
+  try {
+    saved = JSON.parse((data as { value: string }).value);
+  } catch {
+    return null;
+  }
+  if (!saved.hash || !saved.exp || saved.exp < now || saved.hash !== sha256(code)) return null;
+  // 先作廢配對碼，同一組碼不能配兩台
+  await db().from("settings").delete().eq("key", PAIR_KEY);
+  const token = newDeviceToken();
+  const deviceName = typeof name === "string" && name.trim() ? name.trim().slice(0, 40) : "手機";
+  const { data: row, error } = await db().from("app_devices").insert({ name: deviceName, token_hash: sha256(token) }).select("id").single();
+  if (error || !row) throw error ?? new Error("建立裝置失敗");
+  return { token, deviceId: (row as { id: string }).id };
+}
+
+/** 從請求的 Authorization: Bearer 找出是哪台手機；沒配對或被解除就回傳 null */
+export async function deviceFromRequest(req: Request): Promise<AppDevice | null> {
+  const m = (req.headers.get("authorization") ?? "").match(/^Bearer\s+(\S{20,})$/);
+  if (!m) return null;
+  const { data } = await db().from("app_devices").select("id, name, push_token, created_at, last_seen_at").eq("token_hash", sha256(m[1])).maybeSingle();
+  if (!data) return null;
+  const d = data as AppDevice;
+  // 最後使用時間：超過 5 分鐘才更新，避免每次請求都寫資料庫
+  if (Date.now() - new Date(d.last_seen_at).getTime() > 5 * 60_000) {
+    await db().from("app_devices").update({ last_seen_at: new Date().toISOString() }).eq("id", d.id);
+  }
+  return d;
+}
+
+export async function listDevices(): Promise<{ devices: AppDevice[]; ready: boolean }> {
+  const { data, error } = await db().from("app_devices").select("id, name, push_token, created_at, last_seen_at").order("created_at", { ascending: false });
+  if (error) return { devices: [], ready: false };
+  return { devices: (data ?? []) as AppDevice[], ready: true };
+}
+
+export async function removeDevice(id: string): Promise<void> {
+  await db().from("app_devices").delete().eq("id", id);
+}
+
+export async function savePushToken(deviceId: string, token: unknown): Promise<boolean> {
+  if (token !== null && (typeof token !== "string" || !/^Expo(nent)?PushToken\[[^\]]+\]$/.test(token))) return false;
+  await db().from("app_devices").update({ push_token: token }).eq("id", deviceId);
+  return true;
+}
+
+// ---------- 推送 ----------
+
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+
+/** 推送到所有開了通知的手機。沒有配對任何手機、或還沒執行 migration-022 就什麼都不做。回傳送出幾台 */
+export async function sendPush(msg: PushMessage): Promise<number> {
+  const { data, error } = await db().from("app_devices").select("id, push_token").not("push_token", "is", null);
+  if (error || !data?.length) return 0;
+  const rows = (data as { id: string; push_token: string | null }[]).filter((r) => r.push_token);
+  if (!rows.length) return 0;
+  const res = await fetch(EXPO_PUSH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(
+      rows.map((r) => ({ to: r.push_token, title: msg.title.slice(0, 120), body: msg.body.slice(0, 900), data: msg.data ?? {}, sound: "default", priority: "high" })),
+    ),
+  });
+  if (!res.ok) throw new Error(`Expo 推送失敗 ${res.status}`);
+  const json = (await res.json().catch(() => ({}))) as { data?: { status: string; details?: { error?: string } }[] };
+  // App 被刪掉或關掉通知：清掉推送地址，下次不再送
+  const gone = (json.data ?? []).map((t, i) => (t.status === "error" && t.details?.error === "DeviceNotRegistered" ? rows[i]?.id : null)).filter(Boolean) as string[];
+  if (gone.length) await db().from("app_devices").update({ push_token: null }).in("id", gone);
+  return (json.data ?? []).filter((t) => t.status === "ok").length;
+}
+
+/** 推送失敗不能影響原本的 Telegram 通知與排程 */
+export async function sendPushSafe(msg: PushMessage): Promise<number> {
+  try {
+    return await sendPush(msg);
+  } catch (err) {
+    console.error("push", err);
+    return 0;
+  }
+}
+
+/** 每 5 分鐘：有填時間的排程，開始前 30 分鐘推送一次 */
+export async function runEventReminders(now = Date.now()): Promise<number> {
+  const today = taipeiDate(new Date(now));
+  // 開始時間在明天凌晨的也要看（今天 23:50 時要提醒明天 00:10 的）
+  const tomorrow = taipeiDate(new Date(now + 86_400_000));
+  const { data, error } = await db()
+    .from("project_events")
+    .select("id, title, start_date, start_time, reminded, project_id")
+    .gte("start_date", today)
+    .lte("start_date", tomorrow)
+    .eq("reminded", false);
+  if (error || !data?.length) return 0;
+  const due = dueReminders(data as (TimedEvent & { project_id: string })[], now);
+  if (!due.length) return 0;
+  const names = await projectNames();
+  let sent = 0;
+  for (const e of due) {
+    // 先標記再推，推送服務掛了也不會每 5 分鐘重推一次
+    await db().from("project_events").update({ reminded: true }).eq("id", e.id);
+    const who = names.get(e.project_id);
+    sent += await sendPushSafe({ title: `⏰ ${e.start_time!.slice(0, 5)} ${e.title}`, body: who ? `${who}・30 分鐘後開始` : "30 分鐘後開始", data: { screen: "today" } });
+  }
+  return sent;
+}
+
+/** 早上 8 點：今天開始的排程 */
+export async function pushTodayEvents(now = Date.now()): Promise<number> {
+  const today = taipeiDate(new Date(now));
+  const { data, error } = await db().from("project_events").select("title, start_date, end_date, start_time, project_id").eq("start_date", today);
+  if (error || !data?.length) return 0;
+  const names = await projectNames();
+  const msg = todayEventsPush(
+    (data as { title: string; start_date: string; end_date: string; start_time?: string | null; project_id: string }[]).map((e) => ({ ...e, start_time: e.start_time ?? null, project_name: names.get(e.project_id) })),
+    today,
+  );
+  return msg ? sendPushSafe(msg) : 0;
+}
+
+async function projectNames(): Promise<Map<string, string>> {
+  const { projects } = await listProjects();
+  return new Map(projects.map((p) => [p.id, p.name]));
+}
+
+// ---------- 給 App 看的資料 ----------
+
+type EventRow = { id: string; project_id: string; title: string; start_date: string; end_date: string; start_time?: string | null };
+type MilestoneRow = { id: string; project_id: string; title: string; due: string; done: boolean };
+
+function addDays(day: string, n: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+const eventOut = (e: EventRow) => ({ id: e.id, project_id: e.project_id, title: e.title, start_date: e.start_date, end_date: e.end_date, start_time: e.start_time ? e.start_time.slice(0, 5) : null });
+
+/** 網頁目前選的主題（網頁切換時存進 settings.ui_theme），App 跟著換 */
+export async function getUiTheme() {
+  const { data } = await db().from("settings").select("value").eq("key", "ui_theme").maybeSingle();
+  return parseUiTheme((data as { value: string } | null)?.value);
+}
+
+/** 首頁「今天」：今天與接下來 14 天的排程、30 天內的里程碑、產品燈號、進行中的專案 */
+export async function homeData(now = Date.now()) {
+  const today = taipeiDate(new Date(now));
+  const until = addDays(today, 14);
+  const [{ projects }, ev, ms, mon, theme] = await Promise.all([
+    listProjects(),
+    db().from("project_events").select("*").lte("start_date", until).gte("end_date", today).order("start_date").limit(200),
+    db().from("project_milestones").select("id, project_id, title, due, done").eq("done", false).gte("due", today).lte("due", addDays(today, 30)).order("due"),
+    db().from("monitor_status").select("service, product, ok, changed_at, last_error"),
+    getUiTheme(),
+  ]);
+  // 監控產品的名稱（monitor.ts 也會引用這個檔案，所以用動態載入避免互相引用）
+  const products = await (await import("./monitor")).monitorProducts().catch(() => []);
+  const nameOf = (product: string, service: string) => {
+    const p = products.find((x) => x.key === product);
+    return `${p?.label ?? product}・${p?.services.find((x) => x.id === service)?.zh ?? service}`;
+  };
+  return {
+    today,
+    theme,
+    // 全部專案（含已完成，照排序）：App 依這個順序分配顏色，畫面上自己過濾狀態
+    projects: projects.map((p) => ({ id: p.id, slug: p.slug, name: p.name, status: p.status, stage: p.stages[p.stage] ?? null, stage_index: p.stage, stage_count: p.stages.length, next_step: p.next_step, last_activity_at: p.last_activity_at })),
+    events: ((ev.data ?? []) as EventRow[]).map(eventOut),
+    milestones: (ms.data ?? []) as MilestoneRow[],
+    monitor: ((mon.data ?? []) as { service: string; product: string; ok: boolean; changed_at: string; last_error: string | null }[]).map((s) => ({
+      service: s.service,
+      product: s.product,
+      label: nameOf(s.product, s.service),
+      ok: s.ok,
+      changed_at: s.changed_at,
+      error: s.ok ? null : s.last_error,
+    })),
+  };
+}
+
+/** 月曆：某個月（YYYY-MM）的排程與里程碑 */
+export async function calendarData(month: string) {
+  const first = `${month}-01`;
+  const last = addDays(addDays(first, 31).slice(0, 8) + "01", -1);
+  const [{ projects }, ev, ms] = await Promise.all([
+    listProjects(),
+    db().from("project_events").select("*").lte("start_date", last).gte("end_date", first).order("start_date").limit(500),
+    db().from("project_milestones").select("id, project_id, title, due, done").gte("due", first).lte("due", last).order("due"),
+  ]);
+  return {
+    month,
+    projects: projects.map((p) => ({ id: p.id, name: p.name })),
+    events: ((ev.data ?? []) as EventRow[]).map(eventOut),
+    milestones: (ms.data ?? []) as MilestoneRow[],
+  };
+}
+
+/** 單一專案：階段、里程碑、最近 30 筆日誌、接下來的排程 */
+export async function projectData(slug: string, now = Date.now()) {
+  const { projects } = await listProjects();
+  const p = projects.find((x) => x.slug === slug);
+  if (!p) return null;
+  const today = taipeiDate(new Date(now));
+  const [ms, logs, ev] = await Promise.all([
+    db().from("project_milestones").select("id, project_id, title, due, done").eq("project_id", p.id).order("due"),
+    db().from("project_logs").select("id, at, source, text").eq("project_id", p.id).order("at", { ascending: false }).limit(30),
+    db().from("project_events").select("*").eq("project_id", p.id).gte("end_date", today).order("start_date").limit(50),
+  ]);
+  return {
+    project: { id: p.id, slug: p.slug, name: p.name, status: p.status, stages: p.stages, stage_index: p.stage, next_step: p.next_step, description: p.description ?? null, links: p.links ?? {}, last_activity_at: p.last_activity_at },
+    milestones: (ms.data ?? []) as MilestoneRow[],
+    logs: (logs.data ?? []) as { id: number; at: string; source: string; text: string }[],
+    events: ((ev.data ?? []) as EventRow[]).map(eventOut),
+  };
+}
+
+/** 點子：最近 60 則分析好的（只給看，不能改） */
+export async function ideasData() {
+  const [{ projects }, { data }] = await Promise.all([
+    listProjects(),
+    db().from("ideas").select("id, summary, category, score_total, next_step, adopted, url, created_at, project_id").eq("status", "analyzed").order("created_at", { ascending: false }).limit(60),
+  ]);
+  const names = new Map(projects.map((p) => [p.id, p.name]));
+  return {
+    ideas: ((data ?? []) as { id: string; summary: string | null; category: Category | null; score_total: number | null; next_step: string | null; adopted: boolean; url: string | null; created_at: string; project_id?: string | null }[]).map((i) => ({
+      id: i.id,
+      title: i.summary ?? "",
+      category: i.category ? CATEGORY_LABEL[i.category] ?? i.category : null,
+      score: i.score_total,
+      next_step: i.next_step,
+      adopted: i.adopted,
+      url: i.url,
+      created_at: i.created_at,
+      project: i.project_id ? names.get(i.project_id) ?? null : null,
+    })),
+  };
+}
+
+/** 辦公室：每個有資料夾的專案一間房間＋大廳；房間裡是「人」（同專案同職位＝同一個人），狀態已換算好 */
+export async function officeData(now = Date.now()) {
+  const [{ projects }, { sessions, ready }] = await Promise.all([listProjects(), listOffice(now)]);
+  const rooms = projects.filter((p) => p.folder?.trim() && p.status !== "done");
+  const known = new Set(rooms.map((p) => p.id));
+  const people = staffOf(sessions, now).map((s) => ({
+    key: s.session_id,
+    room: s.project_id && known.has(s.project_id) ? s.project_id : "lobby",
+    role: s.role,
+    status: displayStatus(s, now),
+    // 沒在工作的不顯示上次做的事（跟網頁一樣）
+    task: displayStatus(s, now) === "ended" ? null : s.task,
+    folder: s.folder,
+    sessions: s.sessions,
+    updated_at: s.updated_at,
+  }));
+  return {
+    ready,
+    now,
+    // 顏色照全部專案的順序（跟網頁、App 其他頁一致）
+    projects: projects.map((p) => ({ id: p.id })),
+    rooms: [...rooms.map((p) => ({ id: p.id, name: p.name, stage: p.stages[p.stage] ?? null })), { id: "lobby", name: "大廳", stage: null }],
+    people,
+  };
+}

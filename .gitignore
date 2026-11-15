@@ -1,0 +1,14 @@
+node_modules
+.next
+.env*.local
+.env
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+setup.env
+.DS_Store
+
+# 手機 App：expo prebuild 產生的原生專案
+mobile/ios
+mobile/android
+mobile/.expo
