@@ -8,7 +8,7 @@ import { addNoteAndReanalyze, attachPhoto, ingestPhoto, reanalyze, scoreLine } f
 import { esc, sendMessage, sendTyping } from "@/lib/telegram";
 import { askWhere, handleCallback, replyIdea, saveTo, type TgCallback } from "@/lib/tgFlow";
 import { tgDestinations } from "@/lib/modules/registry";
-import { forcedRoute, routeMessage } from "@/lib/tgRoute";
+import { forcedRoute, hasContent, routeMessage } from "@/lib/tgRoute";
 import { extractUrls } from "@/lib/threads";
 import { daysBetween, taipeiDate } from "@/lib/dates";
 
@@ -162,9 +162,11 @@ async function handleMessage(msg: TgMessage) {
   const urls = extractUrls(text, entityUrls).slice(0, 10);
   if (urls.length) {
     const reader = dests.find((d) => d.readLink)?.readLink;
-    const fetched = reader ? (await Promise.all(urls.slice(0, 2).map((u) => reader(u).catch(() => null)))).filter(Boolean).join("\n") : "";
+    const reads = reader ? await Promise.all(urls.slice(0, 2).map((u) => reader(u).catch(() => null))) : [];
+    const fetched = reads.filter(Boolean).join("\n");
     const body = [text, ...entityUrls.filter((u) => !text.includes(u))].filter(Boolean).join(" ");
-    const { route } = routeMessage(text, urls, fetched, dests);
+    // 連結內容讀不到（或只有按讚數這種空殼）、文字也沒線索 → 問你要存哪裡
+    const { route } = routeMessage(text, urls, fetched, dests, { unreadable: !!reader && !reads.some(hasContent) });
     if (route === "ask") await askWhere(chatId, body, msg.message_id);
     else if (route !== "ideas") await saveTo(route, chatId, body, msg.message_id, { moveButton: true });
     else await saveTo("ideas", chatId, text, msg.message_id, { moveButton: true, extraUrls: entityUrls });

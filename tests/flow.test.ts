@@ -85,8 +85,22 @@ async function post(message: Record<string, unknown>, secret = "s3cret") {
     headers: { "x-telegram-bot-api-secret-token": secret, "content-type": "application/json" },
     body: JSON.stringify({ message: { message_id: 1, chat: { id: 111, type: "private" }, from: { id: 111 }, ...message } }),
   });
+  const before = sent.length;
   const res = await POST(req as any);
   await Promise.all(pending);
+  pending.length = 0;
+  // 有其他存放地點（模組）時，讀不到內容的連結會先問要存哪裡：這裡的流程都是存點子庫，自動按「點子庫」
+  const ask = sent.slice(before).find((x) => x.method === "sendMessage" && String(x.body.text).includes("要存到哪裡"));
+  const pick = ask?.body.reply_markup?.inline_keyboard.flat().find((b: { callback_data: string }) => b.callback_data.endsWith(":i"));
+  if (pick) {
+    sent = sent.filter((x) => x !== ask);
+    const n = sent.length;
+    const cb = { callback_query: { id: "cb", data: pick.callback_data, from: { id: 111 }, message: { message_id: 999, chat: { id: 111 } } } };
+    await POST(new Request("https://x/api/telegram", { method: "POST", headers: { "x-telegram-bot-api-secret-token": secret, "content-type": "application/json" }, body: JSON.stringify(cb) }) as any);
+    await Promise.all(pending);
+    pending.length = 0;
+    sent = [...sent.slice(0, n), ...sent.slice(n).filter((x) => x.method !== "answerCallbackQuery" && x.method !== "editMessageReplyMarkup")];
+  }
   return res;
 }
 const replies = () => sent.filter((s) => s.method === "sendMessage").map((s) => s.body.text as string);

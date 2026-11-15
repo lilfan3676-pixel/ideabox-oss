@@ -28,8 +28,9 @@ export function ideaScore(all: string, urls: string[]): number {
  * - alt 3 分以上且比點子多 2 分以上 → 存到 alt；alt 2 分以上、點子 0 分 → 存到 alt
  * - alt 0 分 → 點子庫；點子比 alt 多 2 分以上 → 點子庫
  * - 其他（兩邊都有、或 alt 只有 1 分）→ 問你
+ * - unreadable（有連結但讀不到內容）且兩邊都 0 分 → 問你（沒有線索，不要猜成點子）
  */
-export function routeMessage(text: string, urls: string[], fetched = "", dests: RouteDest[] = []): RouteResult {
+export function routeMessage(text: string, urls: string[], fetched = "", dests: RouteDest[] = [], opts: { unreadable?: boolean } = {}): RouteResult {
   const all = `${text}\n${fetched}`;
   const ideas = ideaScore(all, urls);
   const best = dests.map((d) => ({ key: d.key, n: d.score(all, urls) })).sort((a, b) => b.n - a.n)[0];
@@ -37,6 +38,7 @@ export function routeMessage(text: string, urls: string[], fetched = "", dests: 
   let route: Route;
   if (best && alt >= 3 && alt >= ideas + 2) route = best.key;
   else if (best && alt >= 2 && ideas === 0) route = best.key;
+  else if (alt === 0 && ideas === 0 && opts.unreadable && dests.length) route = "ask";
   else if (alt === 0) route = "ideas";
   else if (ideas >= alt + 2) route = "ideas";
   else route = "ask";
@@ -53,4 +55,16 @@ export function forcedRoute(text: string, dests: { key: string; prefixes: string
   if (k === "點子" || k === "idea") return { route: "ideas", body: m[2].trim() };
   const d = dests.find((x) => x.prefixes.some((p) => p.toLowerCase() === k));
   return d ? { route: d.key, body: m[2].trim() } : null;
+}
+
+/** 讀到的連結內容有沒有實質內文：只有「192 likes, 320 comments - 某某 於 October 31」這種空殼不算 */
+export function hasContent(fetched: string | null | undefined): boolean {
+  if (!fetched) return false;
+  const t = fetched
+    .replace(/[\d,.]+\s*[KkMm萬]?\s*(likes?|comments?|個讚|讚|則留言|留言|followers?|位追蹤者)/gi, "")
+    .replace(/[-–—]?\s*[\w.]+\s*(on|於)\s+[A-Z][a-z]+\s+\d{1,2},?\s*\d{4}/g, "") // 「- 帳號 於 October 31, 2026」
+    .replace(/\b(Instagram|Threads|Facebook|TikTok|Log in|Sign up)\b/gi, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[\s\-–—:：·•|@_.,"'“”()（）]+/g, "");
+  return t.length >= 6;
 }

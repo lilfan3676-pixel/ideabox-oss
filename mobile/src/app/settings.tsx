@@ -5,7 +5,9 @@ import { setThemePref, THEME_LABEL, THEME_SWATCH, useTheme, useThemeState, type 
 import { useCallback, useState } from "react";
 import { Alert, Linking, Pressable, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
+import { Hero } from "@/components/blocks";
 import { Row, Screen, Section } from "@/components/ui";
+import { saveAssistantPos, useAssistantPos } from "@/lib/assistantPos";
 import { unpair } from "@/lib/api";
 import { disablePush, pushStatus, registerPush } from "@/lib/push";
 import { useSession } from "@/lib/session";
@@ -55,9 +57,27 @@ export default function Settings() {
     ]);
 
   const { pref, web } = useThemeState();
+  const assistant = useAssistantPos();
+  const version = `${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "?"}（編譯 ${Application.nativeBuildVersion ?? "開發版"}）`;
+  const host = session?.server.replace(/^https?:\/\//, "") ?? "—";
+  const pushOn = perm === "granted";
 
   return (
     <Screen>
+      {/* 主角：連線與推送狀態；推送沒開就是橘色卡，直接給按鈕 */}
+      {pushOn ? (
+        <Hero kicker="已連線" title={host} sub={`推送已開啟・版本 ${version}`} tone="soft" color={t.ok} />
+      ) : (
+        <Hero kicker="已連線・推送還沒開" title={host} sub={perm === "denied" ? "通知被關掉了，要到 iPhone 設定打開才收得到提醒。" : "打開推送，排程、里程碑和產品掛掉時才會通知你。"} color={t.warn}>
+          <Pressable
+            onPress={perm === "denied" ? () => Linking.openSettings() : busy ? undefined : enable}
+            accessibilityRole="button"
+            style={({ pressed }) => ({ marginTop: 14, alignSelf: "flex-start", backgroundColor: "#ffffff", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9, opacity: pressed || busy ? 0.8 : 1 })}
+          >
+            <Text style={{ fontSize: 15, fontWeight: "800", color: t.warn }}>{perm === "denied" ? "到 iPhone 設定打開" : busy ? "處理中…" : "開啟推送"}</Text>
+          </Pressable>
+        </Hero>
+      )}
       <Section title="外觀" footer={`網頁目前是 ${THEME_LABEL[web.theme]}・${web.mode === "dark" ? "深色" : "淺色"}${web.theme === "portal" ? "（App 沒有 Portal，跟網頁時用 Ember）" : ""}。選「跟網頁」的話，網頁換主題後 App 下次更新資料就會跟著換。`}>
         <View style={{ padding: 14, gap: 14 }}>
           <Choice
@@ -86,9 +106,6 @@ export default function Settings() {
         </View>
       </Section>
 
-      <Section title="連線">
-        <Row title="ideabox 網址" subtitle={session?.server.replace(/^https?:\/\//, "") ?? "—"} last />
-      </Section>
 
       <Section
         title="推送通知"
@@ -108,7 +125,16 @@ export default function Settings() {
         )}
       </Section>
 
-      <Section footer={`App 只能看、不能改；要改資料請到網頁或用 Telegram。\n版本 ${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "?"}（編譯 ${Application.nativeBuildVersion ?? "開發版"}）`}>
+      <Section title="小助手" footer="把小助手拖到想放的地方就會停在那裡；拖到螢幕左右邊緣會收起來，只露半個頭，點一下就跳出來。">
+        <Row
+          title={assistant?.edge ? "目前收在邊邊" : assistant ? "目前在你拖過去的位置" : "目前在右下角"}
+          subtitle={assistant ? "點一下回到右下角" : undefined}
+          onPress={assistant ? () => saveAssistantPos(null) : undefined}
+          last
+        />
+      </Section>
+
+      <Section footer={`App 只能看、不能改；要改資料請到網頁或用 Telegram。\n版本 ${version}`}>
         <Row title="解除配對" onPress={confirmUnpair} destructive last />
       </Section>
     </Screen>

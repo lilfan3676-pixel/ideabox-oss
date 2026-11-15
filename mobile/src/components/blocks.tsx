@@ -189,7 +189,7 @@ export function Timeline({ t, items, nowHm }: { t: Palette; items: TimelineItem[
               {it.time ?? (it.milestone ? "里程碑" : "整天")}
             </Text>
             <View style={{ width: 16, alignItems: "center" }}>
-              <View style={{ width: big ? 13 : 10, height: big ? 13 : 10, borderRadius: it.milestone ? 2 : 7, transform: it.milestone ? [{ rotate: "45deg" }] : undefined, backgroundColor: it.color, marginTop: big ? 6 : 5 }} />
+              <View style={{ width: big ? 13 : 10, height: big ? 13 : 10, borderRadius: it.milestone ? 2 : 7, transform: [{ rotate: it.milestone ? "45deg" : "0deg" }], backgroundColor: it.color, marginTop: big ? 6 : 5 }} />
               {!last ? <View style={{ flex: 1, width: 2, backgroundColor: t.sep, marginTop: 3 }} /> : null}
             </View>
             <View style={{ flex: 1, paddingLeft: 10, paddingBottom: 16 }}>
