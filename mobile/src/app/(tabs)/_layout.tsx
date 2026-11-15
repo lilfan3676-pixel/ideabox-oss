@@ -28,9 +28,9 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Label>專案</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: "folder", selected: "folder.fill" }} />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="ideas">
-        <NativeTabs.Trigger.Label>點子</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: "lightbulb", selected: "lightbulb.fill" }} />
+      <NativeTabs.Trigger name="monitor">
+        <NativeTabs.Trigger.Label>監控</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf={{ default: "waveform.path.ecg", selected: "waveform.path.ecg" }} />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="office">
         <NativeTabs.Trigger.Label>辦公室</NativeTabs.Trigger.Label>

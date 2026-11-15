@@ -147,3 +147,58 @@ export function DayHeading({ t, day, chip }: { t: Palette; day: string; chip?: s
     </View>
   );
 }
+
+export type TimelineItem = { key: string; time: string | null; title: string; sub?: string; color: string; milestone?: boolean };
+
+/**
+ * 時間軸（月曆選到的那天）：整天的、里程碑在上面，有時間的照時間往下排；
+ * 看今天時在現在的位置畫一條主色「現在」線，已經過的變淡
+ */
+export function Timeline({ t, items, nowHm }: { t: Palette; items: TimelineItem[]; nowHm?: string | null }) {
+  const allDay = items.filter((i) => !i.time);
+  const timed = items.filter((i) => i.time).sort((a, b) => a.time!.localeCompare(b.time!));
+  type Row = { kind: "item"; it: TimelineItem; past: boolean } | { kind: "now" };
+  const rows: Row[] = allDay.map((it) => ({ kind: "item" as const, it, past: false }));
+  let nowPlaced = !nowHm;
+  for (const it of timed) {
+    if (!nowPlaced && it.time! > nowHm!) {
+      rows.push({ kind: "now" });
+      nowPlaced = true;
+    }
+    rows.push({ kind: "item", it, past: !!nowHm && it.time! <= nowHm });
+  }
+  if (!nowPlaced && timed.length) rows.push({ kind: "now" });
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}>
+      {rows.map((r, i) => {
+        const last = i === rows.length - 1;
+        if (r.kind === "now") {
+          return (
+            <View key="now" style={{ flexDirection: "row", alignItems: "center", height: 26 }} accessibilityLabel={`現在 ${nowHm}`}>
+              <Text style={{ width: 66, fontSize: 13, fontWeight: "800", color: t.accent }}>現在</Text>
+              <View style={{ width: 16, alignItems: "center" }}><View style={{ width: 14, height: 2, backgroundColor: t.accent }} /></View>
+              <View style={{ flex: 1, height: 2, backgroundColor: t.accent, opacity: 0.45, marginLeft: 8 }} />
+            </View>
+          );
+        }
+        const { it, past } = r;
+        const big = !!it.time;
+        return (
+          <View key={it.key} style={{ flexDirection: "row", opacity: past ? 0.5 : 1 }}>
+            <Text numberOfLines={1} style={{ width: 66, fontSize: big ? 20 : 13, fontWeight: big ? "800" : "600", color: it.milestone ? t.warn : big ? t.accent : t.muted, fontVariant: ["tabular-nums"], paddingTop: big ? 0 : 3 }}>
+              {it.time ?? (it.milestone ? "里程碑" : "整天")}
+            </Text>
+            <View style={{ width: 16, alignItems: "center" }}>
+              <View style={{ width: big ? 13 : 10, height: big ? 13 : 10, borderRadius: it.milestone ? 2 : 7, transform: it.milestone ? [{ rotate: "45deg" }] : undefined, backgroundColor: it.color, marginTop: big ? 6 : 5 }} />
+              {!last ? <View style={{ flex: 1, width: 2, backgroundColor: t.sep, marginTop: 3 }} /> : null}
+            </View>
+            <View style={{ flex: 1, paddingLeft: 10, paddingBottom: 16 }}>
+              <Text style={{ fontSize: big ? 17 : 15, fontWeight: big ? "800" : "700", color: t.text, lineHeight: big ? 24 : 21 }}>{it.title}</Text>
+              {it.sub ? <Text style={{ fontSize: 13, color: t.muted, marginTop: 2 }}>{it.sub}</Text> : null}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}

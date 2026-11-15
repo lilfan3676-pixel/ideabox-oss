@@ -7,6 +7,8 @@
 技術：Next.js 16（App Router）＋ React 19 ＋ Supabase ＋ Vercel ＋ Claude API ＋ Telegram Bot，另有 Expo 手機 App（唯讀）。
 
 > 這是給「自己一個人」用的工具：只有一個登入帳號、一個 Telegram 主人。每個人各自部署一份。
+>
+> 📖 **每個功能怎麼用：[使用說明](docs/使用說明.md)**
 
 ---
 

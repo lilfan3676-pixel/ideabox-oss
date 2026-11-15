@@ -23,9 +23,13 @@ export type ProjectData = {
   logs: { id: number; at: string; source: string; text: string }[];
   events: AppEvent[];
 };
-export type Idea = { id: string; title: string; category: string | null; score: number | null; next_step: string | null; adopted: boolean; url: string | null; created_at: string; project: string | null };
-export type IdeasData = { ideas: Idea[] };
 
 export type OfficeStatus = "idle" | "working" | "waiting" | "permission" | "ended";
 export type OfficePerson = { key: string; room: string; role: string | null; status: OfficeStatus; task: string | null; folder: string | null; sessions: number; updated_at: string };
 export type OfficeData = { ready: boolean; now: number; projects: { id: string }[]; rooms: { id: string; name: string; stage: string | null }[]; people: OfficePerson[] };
+
+// 監控分頁（/api/app/monitor）
+export type MonitorService = { id: string; name: string; checked: boolean; ok: boolean | null; since: string | null; latency_ms: number | null; error: string | null };
+export type MonitorDay = { day: string; users: number | null; active7: number | null; new7: number | null; db_bytes: number | null };
+export type MonitorProductData = { key: string; label: string; services: MonitorService[]; metrics: { users: string; active7: string; new7: string } | null; db_limit: number | null; db_label: string | null; hint: string | null; daily: MonitorDay[] };
+export type MonitorData = { ready: boolean; products: MonitorProductData[]; health: { at: string; issues: { level: "error" | "warn"; text: string }[]; days: number; errors: number; ai_usd_week: number } | null };

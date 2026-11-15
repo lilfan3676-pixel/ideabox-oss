@@ -6,7 +6,7 @@ A personal dashboard for a solo founder. Send interesting posts to a Telegram bo
 
 Stack: Next.js 16 (App Router) + React 19 + Supabase + Vercel + Claude API + Telegram Bot, plus a read-only Expo mobile app.
 
-> Built for **one person**: one login, one Telegram owner. Everyone deploys their own copy. The UI is bilingual (Traditional Chinese / English); some AI prompts (e.g. the grant radar) focus on Taiwan.
+> Built for **one person**: one login, one Telegram owner. Everyone deploys their own copy. A detailed user guide (Traditional Chinese) is in [docs/使用說明.md](docs/使用說明.md). The UI is bilingual (Traditional Chinese / English); some AI prompts (e.g. the grant radar) focus on Taiwan.
 
 ---
 

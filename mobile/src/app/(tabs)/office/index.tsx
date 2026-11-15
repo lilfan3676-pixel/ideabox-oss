@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { OfficeRoom } from "@/components/OfficeRoom";
+import { DayHeading, Hero, soft } from "@/components/blocks";
 import { Card, Empty, ErrorNote, Loading, projectColor, Screen, Section } from "@/components/ui";
 import { useTheme, type Palette } from "@/lib/theme";
 import type { OfficeData, OfficePerson, OfficeStatus } from "@/lib/types";
@@ -77,12 +78,28 @@ export default function Office() {
       {error ? <ErrorNote text={error} onRetry={refresh} /> : null}
       {!data.ready ? <ErrorNote text="辦公室還沒準備好：ideabox 的資料庫要先執行 migration-014。" /> : null}
 
-      {/* 總覽：跟網頁辦公室上方那排一樣 */}
-      <Card style={{ marginHorizontal: 16, marginTop: 8, flexDirection: "row" }}>
-        <Stat t={t} n={working} label="工作中" color={t.ok} />
-        <Stat t={t} n={waiting} label="在等你" color={waiting ? t.warn : t.muted} divider />
-        <Stat t={t} n={onDuty} label="在辦公室" color={t.text} divider />
-      </Card>
+      {/* 主角：有人在等你就講誰在等；沒有就講幾個人在工作 */}
+      {waiting ? (
+        <Hero
+          kicker="在等你"
+          big={String(waiting)}
+          title="個 Claude 在等你回覆"
+          sub={data.people
+            .filter((p) => needsYou(p.status))
+            .slice(0, 3)
+            .map((p) => `${roomName(data, p.room)}・${p.role ?? "待分配"}${p.task ? `：${p.task}` : ""}`)
+            .join("\n")}
+          color={t.warn}
+          a11y={`${waiting} 個 Claude 在等你回覆`}
+        />
+      ) : working ? (
+        <Hero kicker="辦公室" big={String(working)} title="個 Claude 在工作" sub={`在辦公室 ${onDuty} 人・沒有人在等你`} tone="soft" color={t.ok} />
+      ) : (
+        <Hero kicker="辦公室" title={onDuty ? "大家在休息" : "大家都下班了"} sub={onDuty ? `${onDuty} 人在辦公室，沒有人在工作` : "有新的 Claude Code 開始工作就會出現在這裡"} tone="soft" color={t.muted} />
+      )}
+      <Text style={{ marginHorizontal: 20, marginTop: 10, fontSize: 13, color: t.muted, fontWeight: "600" }}>
+        工作中 {working}・在等你 {waiting}・在辦公室 {onDuty}
+      </Text>
 
       {rooms.length === 0 ? (
         <Section>
@@ -134,8 +151,9 @@ export default function Office() {
             </Card>
           ) : null}
 
+          {room ? <DayHeading t={t} day={room.name} chip={room.stage ? `${room.stage}・上班 ${on.length} 人` : `上班 ${on.length} 人`} /> : null}
           {room ? (
-            <Section title={room.stage ? `${room.name}・${room.stage}` : room.name}>
+            <Section>
               {on.length ? on.map((p, i) => <Person key={p.key} p={p} t={t} now={data.now} lobby={room.id === "lobby"} last={i === on.length - 1 && !off.length} />) : <Empty text="現在沒有人在上班" />}
               {off.length > 0 && (
                 <>
@@ -154,6 +172,8 @@ export default function Office() {
   );
 }
 
+const roomName = (d: OfficeData, id: string) => d.rooms.find((r) => r.id === id)?.name ?? "大廳";
+
 /** 大廳沒人就不顯示 */
 function visibleRooms(d: OfficeData) {
   return d.rooms.filter((r) => r.id !== "lobby" || d.people.some((p) => p.room === "lobby"));
@@ -165,14 +185,6 @@ function firstRoom(d: OfficeData): string | null {
   return (rooms.find((r) => has(r.id, (p) => p.status === "working")) ?? rooms.find((r) => has(r.id, (p) => p.status !== "ended")) ?? rooms[0])?.id ?? null;
 }
 
-function Stat({ t, n, label, color, divider }: { t: Palette; n: number; label: string; color: string; divider?: boolean }) {
-  return (
-    <View style={{ flex: 1, alignItems: "center", paddingVertical: 14, borderLeftWidth: divider ? 1 : 0, borderLeftColor: t.sep }}>
-      <Text style={{ fontSize: 26, fontWeight: "900", color, fontVariant: ["tabular-nums"] }}>{n}</Text>
-      <Text style={{ fontSize: 13, color: t.muted, marginTop: 2 }}>{label}</Text>
-    </View>
-  );
-}
 
 /** 一個人：職位色的頭像、職位、狀態、在做的事 */
 function Person({ p, t, now, lobby, last }: { p: OfficePerson; t: Palette; now: number; lobby: boolean; last: boolean }) {
@@ -181,7 +193,7 @@ function Person({ p, t, now, lobby, last }: { p: OfficePerson; t: Palette; now: 
   const offDuty = p.status === "ended";
   const sub = [offDuty ? `待機中・${ago(p.updated_at, now)}` : p.task, lobby && p.folder ? `📁 ${p.folder}` : null, p.sessions > 1 ? `${p.sessions} 個對話` : null].filter(Boolean).join("・");
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, opacity: offDuty ? 0.6 : 1 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, opacity: offDuty ? 0.55 : 1, backgroundColor: needsYou(p.status) ? soft(t.warn, 0.12) : undefined }}>
       <View
         style={{
           width: 36,
@@ -198,11 +210,12 @@ function Person({ p, t, now, lobby, last }: { p: OfficePerson; t: Palette; now: 
       </View>
       <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingRight: 14, borderBottomWidth: last ? 0 : 1, borderBottomColor: t.sep }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 16, fontWeight: "700", color: t.text }}>{role}</Text>
-          {sub ? <Text style={{ fontSize: 14, color: t.muted, marginTop: 2, lineHeight: 19 }} numberOfLines={2}>{sub}</Text> : null}
+          <Text style={{ fontSize: offDuty ? 15 : 16, fontWeight: offDuty ? "600" : "800", color: t.text }}>{role}</Text>
+          {/* 在做的事是重點：工作中／等你的用深色，下班的才用淡色 */}
+          {sub ? <Text style={{ fontSize: 14, color: offDuty ? t.muted : t.text, marginTop: 2, lineHeight: 19 }} numberOfLines={2}>{sub}</Text> : null}
         </View>
         {!offDuty ? (
-          <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: t.radiusSm, backgroundColor: t.accentSoft }}>
+          <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: t.radiusSm, backgroundColor: soft(statusColor(t, p.status), 0.14) }}>
             <Text style={{ fontSize: 13, fontWeight: "700", color: statusColor(t, p.status) }}>{STATUS_LABEL[p.status]}</Text>
           </View>
         ) : null}

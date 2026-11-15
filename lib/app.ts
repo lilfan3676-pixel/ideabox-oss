@@ -299,3 +299,40 @@ export async function officeData(now = Date.now()) {
     people,
   };
 }
+
+/** 監控：每個產品的服務燈號、最近 30 天的數字（用戶／7 天活躍／7 天新增／資料庫）、每週健檢 */
+export async function monitorData(now = Date.now()) {
+  const since = addDays(taipeiDate(new Date(now)), -30);
+  const { monitorProducts } = await import("./monitor"); // monitor.ts 也引用這個檔案，動態載入避免互相引用
+  const { readHealth } = await import("./health");
+  const [products, st, daily, health] = await Promise.all([
+    monitorProducts().catch(() => []),
+    db().from("monitor_status").select("service, product, ok, changed_at, checked_at, latency_ms, last_error"),
+    db().from("monitor_daily").select("product, day, users, active7, new7, db_bytes").gte("day", since).order("day"),
+    readHealth().catch(() => null),
+  ]);
+  type St = { service: string; product: string; ok: boolean; changed_at: string; checked_at: string | null; latency_ms: number | null; last_error: string | null };
+  type Day = { product: string; day: string; users: number | null; active7: number | null; new7: number | null; db_bytes: number | null };
+  const status = (st.data ?? []) as St[];
+  const days = (daily.data ?? []) as Day[];
+  return {
+    ready: !st.error,
+    products: products.map((p) => {
+      const services = p.services.map((s) => {
+        const row = status.find((r) => r.service === s.id);
+        return { id: s.id, name: s.zh, checked: !!row?.checked_at, ok: row ? row.ok : null, since: row?.changed_at ?? null, latency_ms: row?.latency_ms ?? null, error: row && !row.ok ? row.last_error : null };
+      });
+      return {
+        key: p.key,
+        label: p.label,
+        services,
+        metrics: p.metrics ? { users: p.metrics.users[0], active7: p.metrics.active7[0], new7: p.metrics.new7[0] } : null,
+        db_limit: p.dbLimitBytes ?? null,
+        db_label: p.dbLabel?.[0] ?? null,
+        hint: p.setupHint?.[0] ?? null,
+        daily: days.filter((d) => d.product === p.key).map(({ day, users, active7, new7, db_bytes }) => ({ day, users, active7, new7, db_bytes })),
+      };
+    }),
+    health: health ? { at: health.at, issues: health.issues.map((i) => ({ level: i.level, text: i.zh })), days: health.stats.days, errors: health.stats.errors, ai_usd_week: health.stats.aiUsdWeek } : null,
+  };
+}

@@ -299,3 +299,32 @@ describe("主題同步", () => {
     expect(parseUiTheme("??")).toEqual({ theme: "fluento", mode: "light" });
   });
 });
+
+describe("App 監控分頁", () => {
+  it("網址監控的產品：燈號、錯誤、30 天內的數字", async () => {
+    const { monitorData } = await import("@/lib/app");
+    tables.settings.push({ key: "monitor_sites", value: JSON.stringify([{ id: "ab12", name: "官網", url: "https://example.com" }]) });
+    tables.monitor_status.push({ service: "site-ab12", product: "site-ab12", ok: false, changed_at: "2026-11-20T05:00:00Z", checked_at: "2026-11-20T05:35:00Z", latency_ms: 812, last_error: "HTTP 502" });
+    tables.monitor_daily.push(
+      { product: "site-ab12", day: "2026-11-19", users: 10, active7: 4, new7: 1, db_bytes: 1000 },
+      { product: "site-ab12", day: "2026-09-01", users: 1, active7: 1, new7: 1, db_bytes: 1 }, // 超過 30 天
+      { product: "other", day: "2026-11-19", users: 99, active7: 9, new7: 9, db_bytes: 9 },
+    );
+    const d = await monitorData(NOW);
+    expect(d.ready).toBe(true);
+    const site = d.products.find((p) => p.key === "site-ab12")!;
+    expect(site.label).toBe("官網");
+    expect(site.services).toEqual([{ id: "site-ab12", name: "網站", checked: true, ok: false, since: "2026-11-20T05:00:00Z", latency_ms: 812, error: "HTTP 502" }]);
+    expect(site.daily.map((x) => x.day)).toEqual(["2026-11-19"]);
+    expect(d.health).toBeNull();
+  });
+
+  it("還沒檢查過的服務顯示「尚未檢查」；沒配對的手機讀不到", async () => {
+    const { monitorData } = await import("@/lib/app");
+    tables.settings.push({ key: "monitor_sites", value: JSON.stringify([{ id: "cd34", name: "部落格", url: "https://blog.example.com" }]) });
+    const d = await monitorData(NOW);
+    expect(d.products.find((p) => p.key === "site-cd34")!.services[0]).toMatchObject({ checked: false, ok: null, error: null });
+    const route = await import("@/app/api/app/monitor/route");
+    expect((await route.GET(new Request("https://x/api/app/monitor"))).status).toBe(401);
+  });
+});

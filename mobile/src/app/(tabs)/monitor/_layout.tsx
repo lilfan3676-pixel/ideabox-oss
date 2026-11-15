@@ -4,7 +4,7 @@ import { useStackOptions } from "@/components/ui";
 export default function Layout() {
   return (
     <Stack screenOptions={useStackOptions()}>
-      <Stack.Screen name="index" options={{ title: "點子" }} />
+      <Stack.Screen name="index" options={{ title: "監控" }} />
     </Stack>
   );
 }

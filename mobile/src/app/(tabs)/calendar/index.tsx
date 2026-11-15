@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
-import { Compact, DayHeading } from "@/components/blocks";
+import { DayHeading, Timeline } from "@/components/blocks";
+import { taipeiHm } from "@/lib/assistant";
 import { Card, Empty, ErrorNote, projectColor, Screen } from "@/components/ui";
 import { useStyles, useTheme, type Palette } from "@/lib/theme";
 import { addDays, md, taipeiToday } from "@/lib/format";
@@ -90,22 +91,24 @@ export default function CalendarScreen() {
       {/* 選到的那天：大字日期當標題，下面精簡列（時間粗體、里程碑 ◆） */}
       <DayHeading t={t} day={md(selected)} chip={selected === today ? "今天" : dayMs.length + dayEvents.length ? `${dayMs.length + dayEvents.length} 件` : undefined} />
       <Card style={{ marginHorizontal: 16 }}>
-        {dayMs.map((m, i) => (
-          <Compact key={m.id} t={t} left="里程碑" leftColor={t.warn} leftStrong title={`◆ ${m.title}${m.done ? "（已完成）" : ""}`} right={name.get(m.project_id)} dot={projectColor(m.project_id)} last={i === dayMs.length - 1 && !dayEvents.length} />
-        ))}
-        {dayEvents.map((e, i) => (
-          <Compact
-            key={e.id}
+        {dayMs.length || dayEvents.length ? (
+          <Timeline
             t={t}
-            left={e.start_time ?? "整天"}
-            leftStrong={!!e.start_time}
-            title={e.title + (e.end_date > e.start_date ? `（${md(e.start_date)}～${md(e.end_date)}）` : "")}
-            right={name.get(e.project_id)}
-            dot={projectColor(e.project_id)}
-            last={i === dayEvents.length - 1}
+            nowHm={selected === today ? taipeiHm() : null}
+            items={[
+              ...dayMs.map((m) => ({ key: `m${m.id}`, time: null, title: `${m.title}${m.done ? "（已完成）" : ""}`, sub: `${name.get(m.project_id) ?? ""} 里程碑`, color: projectColor(m.project_id), milestone: true })),
+              ...dayEvents.map((e) => ({
+                key: e.id,
+                time: e.start_time,
+                title: e.title,
+                sub: [name.get(e.project_id), e.end_date > e.start_date ? `${md(e.start_date)}～${md(e.end_date)}` : null].filter(Boolean).join("・"),
+                color: projectColor(e.project_id),
+              })),
+            ]}
           />
-        ))}
-        {!dayMs.length && !dayEvents.length ? <Empty text={data ? "這天沒有排程" : "讀取中…"} /> : null}
+        ) : (
+          <Empty text={data ? "這天沒有排程" : "讀取中…"} />
+        )}
       </Card>
     </Screen>
   );
