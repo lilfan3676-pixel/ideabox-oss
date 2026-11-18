@@ -108,7 +108,6 @@
 }
 [data-theme="portal"] .stat b,
 [data-theme="portal"] .metric-row b,
-[data-theme="portal"] .score-ring b,
 [data-theme="portal"] .deadline b {
   font-family: "Anton", "Plus Jakarta Sans", sans-serif;
   font-weight: 400;
@@ -166,7 +165,7 @@
 [data-theme="portal"][data-mode="dark"] .frame { border-color: var(--glass-border); }
 
 /* ---------- 直角、硬陰影、無毛玻璃 ---------- */
-[data-theme="portal"] :is(.glass, .btn, .pill-nav, .pill-nav a, .rail-group, .rail-btn, .circle-btn, .logo,
+[data-theme="portal"] :is(.glass, .btn, .rail-group, .rail-btn, .circle-btn, .logo,
   .theme-switch, .theme-switch button, input, textarea, select, .menu, .menu-item, .notice, .filters,
   .filters select, .content, .bar, .sk, .chip-btn, .bell-row, .service-list li, .thumb, .shot) {
   border-radius: 0;
@@ -177,7 +176,7 @@
 [data-theme="portal"] :is(.badge, .chips span, .scores span, .fit, .score-chip, .bell-count, .idea-head select, .grant-controls select) {
   border-radius: 2px;
 }
-[data-theme="portal"] :is(.glass, .pill-nav, .rail-group, .menu, .filters, .topbar) {
+[data-theme="portal"] :is(.glass, .rail-group, .menu, .filters, .topbar) {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -194,9 +193,7 @@
   background-size: 8px 8px;
 }
 
-/* 六角形：分數環、統計圖示、頭像 */
-[data-theme="portal"] .score-ring,
-[data-theme="portal"] .stat-icon,
+/* 六角形：頭像 */
 [data-theme="portal"] .avatar {
   border-radius: 0;
   clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
@@ -205,8 +202,6 @@
 [data-theme="portal"] .logo { box-shadow: 3px 3px 0 var(--pt-magenta); }
 
 /* ---------- 導覽 ---------- */
-[data-theme="portal"] .pill-nav a { font-weight: 700; }
-[data-theme="portal"] .pill-nav a.active { transform: skewX(-8deg); }
 [data-theme="portal"] .rail-btn.active { box-shadow: 2px 2px 0 var(--pt-magenta); }
 
 /* ---------- 按鈕 ---------- */
@@ -311,7 +306,6 @@
 @media (prefers-reduced-motion: reduce) {
   .pt-sfx { animation: pt-fade 0.9s linear both; }
   @keyframes pt-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
-  [data-theme="portal"] .pill-nav a.active { transform: none; }
 }
 
 /* ---------- 手機 ---------- */
