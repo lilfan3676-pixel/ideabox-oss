@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useL, useLang } from "@/app/LangProvider";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
 import { displayStatus, handoffLive, isRole, officeCounts, onDuty, ROLE_EN, ROLES, staffKey, staffOf, type AgentSession, type AgentStatus, type Handoff } from "@/lib/officeLogic";
@@ -34,7 +35,7 @@ const ROLE_COLOR: Record<string, string> = {
   業務營運: "#b45309",
 };
 
-type ProjectRoom = Pick<Project, "id" | "name" | "stages" | "stage" | "status">;
+type ProjectRoom = Pick<Project, "id" | "slug" | "name" | "stages" | "stage" | "status">;
 
 /** 只比較會影響畫面的欄位，沒變就不重畫 */
 const sig = (list: AgentSession[]) => list.map((s) => `${s.session_id}|${s.status}|${s.role}|${s.task}|${s.project_id}|${s.updated_at}`).join(";");
@@ -130,8 +131,14 @@ export function OfficeView({ projects, sessions: initial, handoffs: initialHando
   ];
   const roomOf = (s: AgentSession) => (s.project_id && projects.some((p) => p.id === s.project_id) ? s.project_id : LOBBY);
   const byRoom = (key: string) => sessions.filter((s) => roomOf(s) === key);
-  // 一開始停在有人在工作的房間
-  const [picked, setPicked] = useState<string | null>(null);
+  // 電腦版：頂部列點專案＝只看那一間（網址 ?room=短名）；沒有就是整棟大樓
+  const roomSlug = useSearchParams().get("room");
+  const solo = (roomSlug && projects.find((p) => p.slug === roomSlug)?.id) || null;
+  // 一開始停在有人在工作的房間（網址有指定房間就停在那間）
+  const [picked, setPicked] = useState<string | null>(solo);
+  useEffect(() => {
+    if (solo) setPicked(solo);
+  }, [solo]);
   const busiest = roomList.find((r) => byRoom(r.key).some((s) => displayStatus(s, now) === "working")) ?? roomList.find((r) => byRoom(r.key).some((s) => onDuty(s, now)));
   const active = picked && roomList.some((r) => r.key === picked) ? picked : (busiest ?? roomList[0]).key;
   const track = useRef<HTMLDivElement>(null);
@@ -229,7 +236,8 @@ export function OfficeView({ projects, sessions: initial, handoffs: initialHando
       {/* 電腦版寬螢幕：大樓在左、清單和交接紀錄在右；窄一點清單在上面（跟原本一樣） */}
       <div className="office-split">
       <div className="office-list-desk">
-        <SessionList sessions={sessions} projects={projects} now={now} onDismiss={dismiss} onRole={changeRole} />
+        <SessionList sessions={solo ? byRoom(solo) : sessions} projects={projects} now={now} onDismiss={dismiss} onRole={changeRole} />
+        {solo && !byRoom(solo).length && <p className="muted small office-solo-empty">{L("這間現在沒有 Claude。", "No Claude in this room right now.")}</p>}
         <HandoffList handoffs={handoffs} sessions={sessions} projects={projects} now={now} />
       </div>
 
@@ -255,12 +263,12 @@ export function OfficeView({ projects, sessions: initial, handoffs: initialHando
         <div className="building-roof" aria-hidden>
           <span>IDEABOX HQ</span>
         </div>
-        <div className="building-floors stagger" ref={track} onScroll={onTrackScroll}>
+        <div className={`building-floors stagger ${solo ? "solo" : ""}`} ref={track} onScroll={onTrackScroll}>
           {rooms.projects.map((r, i) => (
-            <Room key={r.project.id} taking={takingIn(r.people)} roomKey={r.project.id} active={r.project.id === active} title={r.project.name} sub={stageName(r.project)} paused={r.project.status === "paused"} color={r.color} people={r.people} now={now} floor={`${Math.floor(i / 2) + 2}F`} />
+            <Room key={r.project.id} taking={takingIn(r.people)} roomKey={r.project.id} active={r.project.id === active} hide={!!solo && r.project.id !== solo} title={r.project.name} sub={stageName(r.project)} paused={r.project.status === "paused"} color={r.color} people={r.people} now={now} floor={`${Math.floor(i / 2) + 2}F`} />
           ))}
-          <Room lobby taking={takingIn(rooms.lobby)} roomKey={LOBBY} active={active === LOBBY} title={L("大廳", "Lobby")} sub={L("其他資料夾", "Other folders")} color="#94a3b8" people={rooms.lobby} now={now} floor="1F" />
-          {live.lines.length > 0 && <HandoffLines lines={live.lines} stamp={last.current} />}
+          <Room lobby hide={!!solo} taking={takingIn(rooms.lobby)} roomKey={LOBBY} active={active === LOBBY} title={L("大廳", "Lobby")} sub={L("其他資料夾", "Other folders")} color="#94a3b8" people={rooms.lobby} now={now} floor="1F" />
+          {!solo && live.lines.length > 0 && <HandoffLines lines={live.lines} stamp={last.current} />}
         </div>
       </section>
       </div>
@@ -313,12 +321,12 @@ const SEATS: [number, number][] = [1.45, 3.05, 4.65].flatMap((y) => [1.1, 2.9, 4
 
 const LOBBY = "lobby";
 
-type RoomProps = { taking: string; roomKey: string; active: boolean; title: string; sub: string; color: string; people: AgentSession[]; now: number; floor: string; paused?: boolean; lobby?: boolean };
+type RoomProps = { taking: string; roomKey: string; active: boolean; title: string; sub: string; color: string; people: AgentSession[]; now: number; floor: string; paused?: boolean; lobby?: boolean; hide?: boolean };
 
 // 房間裡的人沒變就整間不重畫
-const Room = memo(RoomInner, (a, b) => a.title === b.title && a.active === b.active && a.sub === b.sub && a.color === b.color && a.now === b.now && a.floor === b.floor && a.paused === b.paused && a.taking === b.taking && sig(a.people) === sig(b.people));
+const Room = memo(RoomInner, (a, b) => a.title === b.title && a.active === b.active && a.hide === b.hide && a.sub === b.sub && a.color === b.color && a.now === b.now && a.floor === b.floor && a.paused === b.paused && a.taking === b.taking && sig(a.people) === sig(b.people));
 
-function RoomInner({ taking, roomKey, active, title, sub, color, people, now, floor, paused = false, lobby = false }: RoomProps) {
+function RoomInner({ taking, roomKey, active, title, sub, color, people, now, floor, paused = false, lobby = false, hide = false }: RoomProps) {
   const L = useL();
   const gid = useId().replace(/:/g, "");
   const floorSeed = hash(title) % BOOKS.length;
@@ -351,7 +359,7 @@ function RoomInner({ taking, roomKey, active, title, sub, color, people, now, fl
   const walking = walkers.map((w) => ({ s: w, ...walkFor(w) }));
 
   return (
-    <article data-room={roomKey} className={`office-room glass ${lobby ? "lobby" : ""} ${empty || paused ? "dim" : ""} ${active ? "active" : ""}`} style={{ ["--room" as string]: color }}>
+    <article data-room={roomKey} className={`office-room glass ${lobby ? "lobby" : ""} ${empty || paused ? "dim" : ""} ${active ? "active" : ""} ${hide ? "solo-hide" : ""}`} style={{ ["--room" as string]: color }}>
       <header className="office-room-head">
         <span className="office-floor">{floor}</span>
         <b>{title}</b>

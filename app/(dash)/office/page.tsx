@@ -22,7 +22,7 @@ export default async function OfficePage() {
         <p className="muted small">{L("還沒連上電腦的 Claude Code（Vercel 沒有設定 CLAUDE_HOOK_SECRET），辦公室會一直是空的。", "Claude Code on your Mac isn’t connected yet (CLAUDE_HOOK_SECRET not set).")}</p>
       )}
       <Suspense>
-        <OfficeView projects={projects.filter((p) => p.folder?.trim()).map((p) => ({ id: p.id, name: p.name, stages: p.stages, stage: p.stage, status: p.status }))} sessions={sessions} handoffs={handoffs} now={now} />
+        <OfficeView projects={projects.filter((p) => p.folder?.trim()).map((p) => ({ id: p.id, slug: p.slug, name: p.name, stages: p.stages, stage: p.stage, status: p.status }))} sessions={sessions} handoffs={handoffs} now={now} />
       </Suspense>
     </>
   );

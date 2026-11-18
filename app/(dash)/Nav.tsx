@@ -232,7 +232,8 @@ const RAIL: Record<string, { def: string; items: RailItem[] }> = (() => {
 
 /** 頂部列的檢視切換：頁面內的檢視（手機版是上方可左右滑的小分段）。
  *  在同一頁切換檢視時只改網址、不向伺服器重新要資料，畫面瞬間切換。 */
-export type RailProject = { id?: string; slug: string; name: string; color: string };
+/** room＝這個專案在辦公室有房間（填了資料夾名稱） */
+export type RailProject = { id?: string; slug: string; name: string; color: string; room?: boolean };
 
 /** 合夥人在專案頁只看得到有權限的檢視（卡片／月曆） */
 function railFor(page: string, a: Access) {
@@ -257,6 +258,7 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
   const hrefFor = (v: string) => {
     const p = new URLSearchParams(onBase ? sp.toString() : "");
     p.delete("msg");
+    p.delete("room"); // 辦公室：按檢視就回到整棟大樓
     if (v === rail.def) p.delete("view");
     else p.set("view", v);
     const s = p.toString();
@@ -268,7 +270,7 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
       <div className="rail-group">
         {rail.items.map((it) => {
           const href = hrefFor(it.key);
-          const active = it.key === view;
+          const active = it.key === view && !(page === "/office" && onBase && sp.get("room"));
           return (
             <Link
               key={it.key}
@@ -290,16 +292,23 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
           );
         })}
       </div>
-      {/* 專案頁、辦公室：下面多一排，每個專案的詳細頁 */}
-      {(page === "/projects" || page === "/office") && projects.length > 0 && (
+      {/* 專案頁：每個專案的詳細頁；辦公室：切到那個專案的房間（只列有房間的專案，同一頁切換只改網址） */}
+      {(page === "/projects" || page === "/office") && projects.some((p) => page !== "/office" || p.room) && (
         <div className="rail-group rail-projects">
-          {projects.map((p) => {
-            const href = `/projects/${p.slug}`;
-            const active = pathname === href;
+          {projects.filter((p) => page !== "/office" || p.room).map((p) => {
+            const office = page === "/office";
+            const href = office ? `/office?room=${p.slug}` : `/projects/${p.slug}`;
+            const active = office ? onBase && sp.get("room") === p.slug : pathname === href;
             return (
               <Link
                 key={p.slug}
                 href={href}
+                prefetch={office ? false : undefined}
+                onClick={(e) => {
+                  if (!office || !onBase) return;
+                  e.preventDefault();
+                  if (!active) window.history.pushState(null, "", href);
+                }}
                 className={`rail-btn ${active ? "active" : ""}`}
                 aria-label={p.name}
                 aria-current={active ? "page" : undefined}

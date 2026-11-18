@@ -690,6 +690,14 @@ a.menu-item:hover { text-decoration: none; }
 /* ---------- 成本 ---------- */
 .stack-bar { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--glass); border: 1px solid var(--glass-border); }
 .stack-bar span { display: block; height: 100%; }
+/* 成本：依產品／用途的清單（色塊＋名稱＋金額） */
+.donut-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; font-size: 13px; }
+.donut-legend li { display: flex; align-items: center; gap: 8px; }
+.legend-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.donut-legend b { font-variant-numeric: tabular-nums; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.holding-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.trend-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .due-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .due-list li { display: flex; align-items: center; gap: 10px; }
 .due-days { min-width: 48px; text-align: center; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-border); }
@@ -1448,7 +1456,7 @@ button.project-link-btn.unset:not(:disabled):hover { opacity: .8; }
 
 /* 成本頁：總預算 */
 .budget-card { padding: 16px 20px; margin-bottom: 14px; }
-.budget-card h3 { margin: 0; }
+.budget-card h3 { margin: 0; white-space: nowrap; flex: none; }
 .budget-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
 .budget-head .push { margin-left: auto; }
 .budget-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -1874,6 +1882,11 @@ button.project-link-btn.unset:not(:disabled):hover { opacity: .8; }
 .watch-name { display: flex; flex-direction: column; min-width: 0; color: inherit; }
 .watch-name:hover { text-decoration: none; color: var(--accent); }
 .watch-name b, .watch-name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 平板寬度放不下六欄：拿掉走勢小圖那一欄 */
+@media (max-width: 960px) {
+  .watch-tr { grid-template-columns: minmax(120px, 2fr) 84px 80px 96px 64px; gap: 10px; }
+  .watch-tr > :nth-child(4) { display: none; }
+}
 .row-spark { display: block; width: 100%; height: 30px; color: var(--muted); }
 .row-spark .a { fill: none; }
 .row-spark .l { fill: none; stroke: currentColor; stroke-width: 1.8; vector-effect: non-scaling-stroke; }
@@ -1886,7 +1899,7 @@ button.project-link-btn.unset:not(:disabled):hover { opacity: .8; }
 .stock-split .page-aside .panel { min-width: 0; }
 @media (max-width: 1180px) {
   /* 一欄時照原本的順序：AI 一句話 → 指數與市場 → 自選股 */
-  .stock-split { display: flex; flex-direction: column; gap: 14px; }
+  .stock-split { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
   .stock-split .page-aside { display: contents; }
   .stock-split .explain-card { order: -1; }
   .stock-split .page-main .index-grid { margin-bottom: 0; }
@@ -2043,7 +2056,21 @@ button.bar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset:
   .office-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
   .office-split .office-main { order: 1; min-width: 0; }
   .office-split .office-list-desk { order: 2; position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; }
+  /* 右欄只有 340px：清單改成兩行（人＋狀態＋下班，下面一行寫在做什麼），跟手機版同一種排法 */
+  .office-split .office-list-desk .office-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; }
+  .office-split .office-list-desk .office-row-task { grid-column: 1 / -1; order: 3; white-space: normal; }
+  .office-split .office-list-desk .office-row-time { display: none; }
+  .office-split .office-list-desk .office-ho-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .office-split .office-list-desk .office-ho-row .office-row-time { display: block; grid-column: 1 / -1; }
+  .office-split .office-list-desk .office-ho-row .office-row-task { grid-column: 1 / -1; order: 3; }
 }
+/* 辦公室：頂部列點了專案＝只看那一間（手機本來就一次一間，不套用） */
+@media (min-width: 721px) {
+  .building-floors.solo { grid-template-columns: minmax(0, 1fr); }
+  .building-floors.solo > .office-room.solo-hide { display: none; }
+  .building-floors.solo .office-stage { max-width: 760px; margin: 0 auto; }
+}
+.office-solo-empty { margin: 0 0 14px; }
 /* 設定：寬螢幕時「關於你」和「專案描述」並排，連線狀態排成小卡 */
 @media (min-width: 1181px) {
   .settings-single.settings-v-desc { max-width: none; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; align-items: start; }

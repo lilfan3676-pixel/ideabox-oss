@@ -37,14 +37,14 @@ async function pendingCounts() {
 /** 頂部列的專案捷徑（顏色跟專案頁一樣照順序）；還沒執行 migration-012 時是空的 */
 async function railProjects(access: Access): Promise<RailProject[]> {
   if (!can(access, "projects")) return []; // 只開月曆的合夥人進不了專案詳細頁
-  const { data, error } = await db().from("projects").select("id, slug, name, status").order("sort", { ascending: true });
+  const { data, error } = await db().from("projects").select("id, slug, name, status, folder").order("sort", { ascending: true });
   if (error || !data) return [];
   const palette = Object.values(FOLDER_COLORS);
   // 顏色照全部專案的順序（合夥人看到的顏色跟你一樣），再過濾看得到的
-  return (data as { id: string; slug: string; name: string; status: string }[])
-    .map((p, i) => ({ id: p.id, slug: p.slug, name: p.name, status: p.status, color: palette[i % palette.length] }))
+  return (data as { id: string; slug: string; name: string; status: string; folder: string | null }[])
+    .map((p, i) => ({ id: p.id, slug: p.slug, name: p.name, status: p.status, room: !!p.folder?.trim(), color: palette[i % palette.length] }))
     .filter((p) => p.status !== "done" && seesProject(access, p.id))
-    .map(({ slug, name, color }) => ({ slug, name, color }));
+    .map(({ slug, name, color, room }) => ({ slug, name, color, room }));
 }
 
 export default async function DashLayout({ children }: { children: React.ReactNode }) {
