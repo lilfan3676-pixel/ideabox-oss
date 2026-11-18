@@ -874,6 +874,23 @@ function HandoffList({ handoffs, sessions, projects, now }: { handoffs: Handoff[
   const L = useL();
   const lang = useLang();
   const [all, setAll] = useState(false);
+  // 收合狀態記在這台電腦上（跟上面的清單一樣）
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("ib-office-handoffs") === "closed") setOpen(false);
+    } catch {
+      /* 存不了就預設展開 */
+    }
+  }, []);
+  const toggle = () => {
+    setOpen(!open);
+    try {
+      localStorage.setItem("ib-office-handoffs", open ? "closed" : "open");
+    } catch {
+      /* 無痕模式等 */
+    }
+  };
   if (!handoffs.length) return null;
   const byId = new Map(sessions.map((s) => [s.session_id, s]));
   const who = (s: AgentSession | undefined) => {
@@ -898,11 +915,16 @@ function HandoffList({ handoffs, sessions, projects, now }: { handoffs: Handoff[
   };
   const list = all ? handoffs : handoffs.slice(0, 6);
   return (
-    <section className="glass office-list office-handoffs" aria-label={L("交接紀錄", "Handoffs")}>
+    <section className={`glass office-list office-handoffs ${open ? "" : "closed"}`} aria-label={L("交接紀錄", "Handoffs")}>
       <h2 className="office-list-title">
-        {L("交接紀錄", "Handoffs")}
-        <span className="muted">{L("7 天內", "last 7 days")}</span>
+        <button type="button" className="office-list-toggle" onClick={toggle} aria-expanded={open}>
+          <span className="office-chevron" aria-hidden>▾</span>
+          {L("交接紀錄", "Handoffs")}
+          <span className="muted">{open ? L("7 天內", "last 7 days") : L(`7 天內 ${handoffs.length} 筆`, `${handoffs.length} in 7 days`)}</span>
+        </button>
       </h2>
+      {open && (
+        <>
       <ul>
         {list.map((h) => {
           const [cls, label] = state(h.to ? byId.get(h.to) : undefined);
@@ -924,6 +946,8 @@ function HandoffList({ handoffs, sessions, projects, now }: { handoffs: Handoff[
         <button type="button" className="office-off-toggle muted small" onClick={() => setAll(!all)} aria-expanded={all}>
           {all ? L("收起", "Show less") : L(`看全部 ${handoffs.length} 筆`, `Show all ${handoffs.length}`)}
         </button>
+      )}
+        </>
       )}
     </section>
   );

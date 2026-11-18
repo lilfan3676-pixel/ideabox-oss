@@ -698,6 +698,11 @@ a.menu-item:hover { text-decoration: none; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .holding-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
 .trend-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+/* 成本：兩張說明卡片在寬螢幕左右並排，900px 以下上下疊 */
+@media (min-width: 901px) {
+  .insight-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 14px; align-items: start; }
+  .insight-grid > .panel { margin: 0; }
+}
 .due-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .due-list li { display: flex; align-items: center; gap: 10px; }
 .due-days { min-width: 48px; text-align: center; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--glass); border: 1px solid var(--glass-border); }
@@ -2055,7 +2060,9 @@ button.bar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset:
 @media (min-width: 1181px) {
   .office-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
   .office-split .office-main { order: 1; min-width: 0; }
-  .office-split .office-list-desk { order: 2; position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; }
+  /* 右欄自己可以捲；四周多留一圈再用負邊界拉回來，卡片的陰影才不會被捲動區切成一塊方形的底 */
+  .office-split .office-list-desk { order: 2; position: sticky; top: -8px; max-height: calc(100vh + 16px); overflow-y: auto; scrollbar-width: none; padding: 32px 28px 56px; margin: -32px -28px -56px; }
+  .office-split .office-list-desk::-webkit-scrollbar { display: none; }
   /* 右欄只有 340px：清單改成兩行（人＋狀態＋下班，下面一行寫在做什麼），跟手機版同一種排法 */
   .office-split .office-list-desk .office-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; }
   .office-split .office-list-desk .office-row-task { grid-column: 1 / -1; order: 3; white-space: normal; }
