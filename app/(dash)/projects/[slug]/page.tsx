@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { requireOwner } from "@/lib/auth";
+import { requirePage } from "@/lib/auth";
+import { can, seesProject } from "@/lib/accessLogic";
 import { taipeiDate } from "@/lib/dates";
 import { db, type Idea } from "@/lib/db";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
@@ -16,12 +17,14 @@ export const maxDuration = 300; // 「現在抓一次」話題雷達在背景跑
 
 // 單一專案的詳細頁：階段歷程、里程碑、這個專案的點子、產品數據（有接監控的）、辦公室裡的人、完整日誌
 export default async function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {
-  await requireOwner();
+  const { access } = await requirePage("projects");
   const { slug } = await params;
   const { projects } = await listProjects();
   const index = projects.findIndex((p) => p.slug === decodeURIComponent(slug).toLowerCase());
   const project = projects[index];
-  if (!project) notFound();
+  // 合夥人看不到的專案當作不存在
+  if (!project || !seesProject(access, project.id)) notFound();
+  const owner = access.owner;
   const color = Object.values(FOLDER_COLORS)[index % Object.values(FOLDER_COLORS).length];
   const now = Date.now();
   const since90 = taipeiDate(new Date(now - 90 * 86_400_000));
@@ -31,6 +34,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   // 模組提供的回報時間（例如封測回報），第一個有回應的為準
   const feedbackOf = async () => {
     const since = new Date(now - 84 * 86_400_000).toISOString();
+    if (!owner) return null; // 模組的回報（例如封測）只有你看得到
     for (const m of modules()) {
       const r = m.projectFeedback ? await m.projectFeedback(project.slug, since).catch(() => null) : null;
       if (r) return r;
@@ -42,12 +46,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     db().from("project_milestones").select("*").eq("project_id", project.id).order("due", { ascending: true }),
     db().from("project_logs").select("*").eq("project_id", project.id).order("at", { ascending: false }).limit(500),
     // 還沒執行 migration-013 時沒有 project_id 欄位，當作沒有點子
-    db().from("ideas").select("*").eq("project_id", project.id).order("score_total", { ascending: false, nullsFirst: false }).limit(200),
+    db().from("ideas").select("*").eq("project_id", can(access, "ideas") ? project.id : "00000000-0000-0000-0000-000000000000").order("score_total", { ascending: false, nullsFirst: false }).limit(200),
     db().from("monitor_daily").select("*").eq("product", pkey ?? project.slug).gte("day", since90).order("day"),
     db().from("monitor_status").select("service, ok, checked_at, latency_ms").eq("product", pkey ?? project.slug),
-    listOffice(now),
+    owner ? listOffice(now) : { sessions: [], ready: false },
     feedbackOf(),
-    listRadarReports(project.id),
+    can(access, "radar") ? listRadarReports(project.id) : { reports: [], ready: false },
   ]);
 
   const product: ProductData = {
@@ -64,6 +68,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       milestones={(ms ?? []) as Milestone[]}
       logs={(logs ?? []) as ProjectLog[]}
       ideas={ideasRes.error ? [] : ((ideasRes.data ?? []) as Idea[])}
+      showIdeas={can(access, "ideas")}
+      showRadar={can(access, "radar")}
+      showProduct={can(access, "monitor")}
       product={product}
       people={office.sessions.filter((s) => s.project_id === project.id)}
       radar={{ reports: radar.reports, ready: radar.ready && "radar_keywords" in project, enabled: radarEnabled() }}

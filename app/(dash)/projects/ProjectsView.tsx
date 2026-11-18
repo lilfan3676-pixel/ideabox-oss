@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { daysBetween } from "@/lib/dates";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
@@ -9,6 +9,8 @@ import { timeAgo } from "@/lib/format";
 import { useL, useLang } from "@/app/LangProvider";
 import { daysIdle, LINK_KINDS, LINK_LABEL, STALE_DAYS, type LogSource, type Milestone, type Project, type ProjectEvent, type ProjectLog } from "@/lib/projectLogic";
 import { useView } from "../Nav";
+import { useAccess } from "../AccessContext";
+import { can, editsProject } from "@/lib/accessLogic";
 import {
   addLog,
   addMilestoneAction,
@@ -25,6 +27,8 @@ import {
 import { Schedule, type ActivityLog, type StageLog } from "./Schedule";
 import { Calendar } from "./Calendar";
 import { ProjectLinks } from "./ProjectLinks";
+import { projectInsights } from "@/lib/insights";
+import { Delta, Kpi, KpiRow, SidePanel } from "../Insight";
 
 // 左側列：專案卡片／月曆兩頁
 const VIEWS = ["cards", "calendar"] as const;
@@ -42,8 +46,10 @@ export function ProjectsView({
   eventsReady = false,
   today,
   now,
+  order,
 }: {
   projects: Project[];
+  order?: string[]; // 全部專案的順序（合夥人只拿到部分專案時，顏色照全部的順序，跟你看到的一樣）
   milestones: Milestone[];
   logs: ProjectLog[];
   stageLogs?: StageLog[]; // 全部的「階段：A → B」日誌（時程表還原階段用）
@@ -53,7 +59,9 @@ export function ProjectsView({
   today: string; // 台北日期，由伺服器提供
   now: number;
 }) {
-  const view = useView("cards", VIEWS);
+  const access = useAccess();
+  const views = VIEWS.filter((v) => (v === "calendar" ? can(access, "calendar") : can(access, "projects")));
+  const view = useView(views[0] ?? "cards", views);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
   const L = useL();
   const [notice, setNotice] = useState<{ text: string; ok?: boolean } | null>(null);
@@ -75,7 +83,8 @@ export function ProjectsView({
       /* 無痕模式等 */
     }
   };
-  const colorOf = (id: string) => PALETTE[Math.max(0, projects.findIndex((p) => p.id === id)) % PALETTE.length];
+  const ids = order ?? projects.map((p) => p.id);
+  const colorOf = (id: string) => PALETTE[Math.max(0, ids.indexOf(id)) % PALETTE.length];
 
   const list = projects.filter((p) => (filter === "active" ? p.status === "active" : filter === "paused" ? p.status !== "active" : true));
   // 月曆、時程表看所有沒完成的專案
@@ -87,6 +96,21 @@ export function ProjectsView({
     .map((p) => ({ p, days: daysIdle(p, now) }))
     .sort((a, b) => b.days - a.days);
 
+  // 最上面那排重點數字與右欄（電腦版）
+  const pin = useMemo(() => projectInsights(projects, milestones, activity, today, now), [projects, milestones, activity, today, now]);
+  const nameOf = (id: string) => projects.find((p) => p.id === id)?.name ?? "";
+  const lang = useLang();
+  const slackButton = access.owner ? (
+    <button
+      type="button"
+      className="btn small"
+      disabled={syncing}
+      onClick={() => startSync(async () => setNotice(await syncSlackNow().catch(() => ({ ok: false, text: L("讀取失敗", "Failed") }))))}
+    >
+      {syncing ? L("讀取中…", "Reading…") : L("立即讀取 Slack", "Read Slack now")}
+    </button>
+  ) : null;
+
   // 伺服器動作失敗時跳提示；成功時頁面會自己更新
   const report = (r: ProjectResult) => {
     if (!r.ok) setNotice({ text: r.error ?? L("沒有存成功，請再試一次", "Couldn’t save — please try again") });
@@ -94,7 +118,35 @@ export function ProjectsView({
 
   return (
     <>
-      <div className="page-title with-action">
+      {/* 電腦版：重點數字卡；手機版照舊用下面的標題列 */}
+      <KpiRow label={L("重點數字", "Key numbers")}>
+        <Kpi pop label={L("進行中", "Active")} value={pin.active} hint={L(`暫停／完成 ${pin.paused}`, `${pin.paused} paused / done`)} />
+        <Kpi
+          label={L("本週工作日誌", "Logs this week")}
+          value={pin.logsWeek}
+          hint={<><Delta now={pin.logsWeek} prev={pin.logsLastWeek} flat={L("跟上週一樣", "Same as last week")} />{pin.logsWeek !== pin.logsLastWeek ? L(" 比上週", " vs last week") : ""}</>}
+          data={pin.weekly}
+        />
+        <Kpi
+          tone={pin.overdue ? "warn" : ""}
+          label={L("接下來的里程碑", "Upcoming milestones")}
+          value={pin.upcoming.length}
+          hint={
+            pin.overdue
+              ? L(`另外有 ${pin.overdue} 個已經過期`, `${pin.overdue} overdue`)
+              : pin.upcoming[0]
+                ? L(`最近：${pin.upcoming[0].days === 0 ? "今天" : `${pin.upcoming[0].days} 天後`} ${pin.upcoming[0].title}`, `Next: ${pin.upcoming[0].days}d · ${pin.upcoming[0].title}`)
+                : L("沒有排定的里程碑", "Nothing scheduled")
+          }
+        />
+        <Kpi
+          tone={stale.length ? "warn" : ""}
+          label={L(`超過 ${STALE_DAYS} 天沒動`, `Idle ${STALE_DAYS}+ days`)}
+          value={stale.length}
+          hint={stale.length ? stale.map(({ p, days }) => L(`${p.name}（${days} 天）`, `${p.name} (${days}d)`)).join(L("、", ", ")) : L("每個專案最近都有動", "Everything is moving")}
+        />
+      </KpiRow>
+      <div className="page-title with-action m-only">
         <div>
         <h1>{L("專案", "Projects")}</h1>
         <p className="muted title-stats">
@@ -115,23 +167,17 @@ export function ProjectsView({
         </p>
         </div>
         {/* 平常每 5 分鐘自動讀；這顆按鈕馬上讀一次，順便檢查頻道有沒有設定好 */}
-        <div className="title-actions">
-          <button
-            type="button"
-            className="btn small"
-            disabled={syncing}
-            onClick={() => startSync(async () => setNotice(await syncSlackNow().catch(() => ({ ok: false, text: L("讀取失敗", "Failed") }))))}
-          >
-            {syncing ? L("讀取中…", "Reading…") : L("立即讀取 Slack", "Read Slack now")}
-          </button>
-        </div>
+        {slackButton && <div className="title-actions">{slackButton}</div>}
       </div>
 
       {view === "calendar" ? (
         <>
+          <div className="view-line">
           <div className="seg plan-switch" role="group" aria-label={L("檢視方式", "View")}>
             <button type="button" className={plan === "calendar" ? "active" : ""} aria-pressed={plan === "calendar"} onClick={() => pickPlan("calendar")}>{L("月曆", "Calendar")}</button>
             <button type="button" className={plan === "gantt" ? "active" : ""} aria-pressed={plan === "gantt"} onClick={() => pickPlan("gantt")}>{L("時程表", "Timeline")}</button>
+          </div>
+          <span className="push d-only">{slackButton}</span>
           </div>
           {/* 換月曆／時程表時淡入 */}
           <div className="view-swap" key={plan}>
@@ -143,7 +189,8 @@ export function ProjectsView({
           </div>
         </>
       ) : (
-        <>
+        <div className="page-split">
+          <div className="page-main">
           <div className="seg plan-switch" role="group" aria-label={L("篩選", "Filter")}>
             {FILTERS.map((f) => (
               <button key={f} type="button" className={filter === f ? "active" : ""} aria-pressed={filter === f} onClick={() => setFilter(f)}>
@@ -164,9 +211,33 @@ export function ProjectsView({
                 report={report}
               />
             ))}
-            {filter !== "paused" && <NewProject report={report} />}
+            {filter !== "paused" && access.owner && <NewProject report={report} />}
           </div>
-        </>
+          </div>
+          <aside className="page-aside d-only" aria-label={L("專案概況", "Project overview")}>
+            <SidePanel title={L("里程碑", "Milestones")} action={can(access, "calendar") ? <Link href="/projects?view=calendar" className="small">{L("看月曆", "Calendar")}</Link> : undefined}>
+              {pin.upcoming.length ? pin.upcoming.slice(0, 6).map((m) => (
+                <div className="side-row" key={m.id}>
+                  <b className="side-date">{+m.due.slice(5, 7)}/{+m.due.slice(8, 10)}</b>
+                  <span className="grow">
+                    <span className="side-title">{m.title}</span>
+                    <span className="muted small">{nameOf(m.project_id)}・{m.days === 0 ? L("今天", "today") : L(`${m.days} 天後`, `in ${m.days}d`)}</span>
+                  </span>
+                </div>
+              )) : <p className="muted small">{L("沒有排定的里程碑", "Nothing scheduled")}</p>}
+            </SidePanel>
+            <SidePanel title={L("最新日誌", "Latest logs")} action={slackButton ?? undefined}>
+              {logs.length ? logs.slice(0, 5).map((l) => (
+                <div className="side-row" key={l.id}>
+                  <span className="grow">
+                    <span className="side-title clamp">{l.text}</span>
+                    <span className="muted small">{nameOf(l.project_id)}・{timeAgo(l.at, now, lang)}</span>
+                  </span>
+                </div>
+              )) : <p className="muted small">{L("還沒有日誌", "No logs yet")}</p>}
+            </SidePanel>
+          </aside>
+        </div>
       )}
 
       {notice && typeof document !== "undefined" && createPortal(
@@ -209,6 +280,9 @@ function ProjectCard({
   const [showDone, setShowDone] = useState(false);
   const [pending, start] = useTransition();
   const run = (fn: () => Promise<ProjectResult>) => start(async () => report(await fn().catch(() => ({ ok: false }))));
+  const access = useAccess();
+  const owner = access.owner; // 階段、下一步、設定只有你能改
+  const edit = editsProject(access, p.id); // 里程碑、日誌：你和「可編輯」的合夥人
 
   const idle = daysIdle(p, now);
   const stale = p.status === "active" && idle >= STALE_DAYS;
@@ -228,9 +302,9 @@ function ProjectCard({
           {stale ? "💤 " : ""}
           {idle <= 0 ? L("今天有更新", "Updated today") : L(`${idle} 天前更新`, `Updated ${idle}d ago`)}
         </span>
-        <button type="button" className="btn ghost small" onClick={() => setSettings(true)}>{L("設定", "Settings")}</button>
+        {owner && <button type="button" className="btn ghost small" onClick={() => setSettings(true)}>{L("設定", "Settings")}</button>}
       </header>
-      <ProjectLinks links={p.links} onEmpty={() => setSettings(true)} />
+      <ProjectLinks links={p.links} onEmpty={owner ? () => setSettings(true) : undefined} />
 
       {/* 階段：點一下就切換 */}
       <ol className="stage-steps" aria-label={L("階段", "Stages")}>
@@ -238,7 +312,7 @@ function ProjectCard({
           <li key={s} className={n < p.stage ? "past" : n === p.stage ? "now" : ""}>
             <button
               type="button"
-              disabled={pending || n === p.stage}
+              disabled={pending || n === p.stage || !owner}
               aria-current={n === p.stage ? "step" : undefined}
               title={n === p.stage ? L("目前階段", "Current stage") : L(`切換到「${s}」`, `Move to “${s}”`)}
               onClick={() => run(() => setStage(p.id, n))}
@@ -263,7 +337,7 @@ function ProjectCard({
             <button className="btn small primary" type="submit">{L("儲存", "Save")}</button>
           </form>
         ) : (
-          <button type="button" className="next-text" onClick={() => setEditingNext(true)} title={L("點一下修改", "Click to edit")}>
+          <button type="button" className="next-text" disabled={!owner} onClick={() => setEditingNext(true)} title={owner ? L("點一下修改", "Click to edit") : undefined}>
             {p.next_step ? `👉 ${p.next_step}` : <span className="muted">{L("＋ 寫下一步要做什麼", "+ Write the next step")}</span>}
           </button>
         )}
@@ -276,19 +350,19 @@ function ProjectCard({
             const days = daysBetween(today, m.due);
             return (
               <li key={m.id} className={days < 0 ? "overdue" : days <= 7 ? "soon" : ""}>
-                <input type="checkbox" checked={false} disabled={pending} onChange={() => run(() => toggleMilestone(m.id))} aria-label={L(`完成「${m.title}」`, `Complete “${m.title}”`)} />
+                <input type="checkbox" checked={false} disabled={pending || !edit} onChange={() => run(() => toggleMilestone(m.id))} aria-label={L(`完成「${m.title}」`, `Complete “${m.title}”`)} />
                 <span className="ms-title">{m.title}</span>
                 <span className="ms-due">
                   {m.due.slice(5).replace("-", "/")}・{days < 0 ? L(`過期 ${-days} 天`, `${-days}d overdue`) : days === 0 ? L("今天", "today") : L(`${days} 天後`, `in ${days}d`)}
                 </span>
-                <button type="button" className="ms-del" aria-label={L("刪除里程碑", "Delete milestone")} onClick={() => window.confirm(L(`刪除「${m.title}」？`, `Delete “${m.title}”?`)) && run(() => deleteMilestone(m.id))}>×</button>
+                {edit && <button type="button" className="ms-del" aria-label={L("刪除里程碑", "Delete milestone")} onClick={() => window.confirm(L(`刪除「${m.title}」？`, `Delete “${m.title}”?`)) && run(() => deleteMilestone(m.id))}>×</button>}
               </li>
             );
           })}
           {showDone &&
             doneMs.map((m) => (
               <li key={m.id} className="done">
-                <input type="checkbox" checked disabled={pending} onChange={() => run(() => toggleMilestone(m.id))} aria-label={L(`取消完成「${m.title}」`, `Reopen “${m.title}”`)} />
+                <input type="checkbox" checked disabled={pending || !edit} onChange={() => run(() => toggleMilestone(m.id))} aria-label={L(`取消完成「${m.title}」`, `Reopen “${m.title}”`)} />
                 <span className="ms-title">{m.title}</span>
                 <span className="ms-due">{m.due.slice(5).replace("-", "/")}</span>
               </li>
@@ -299,19 +373,19 @@ function ProjectCard({
             {showDone ? L("收起已完成", "Hide completed") : L(`已完成 ${doneMs.length} 個`, `${doneMs.length} completed`)}
           </button>
         )}
-        <form
+        {edit && <form
           className="ms-add"
           action={(fd) => run(() => addMilestoneAction(p.id, String(fd.get("title") ?? ""), String(fd.get("due") ?? "")))}
         >
           <input name="due" type="date" min={today} required aria-label={L("日期", "Date")} />
           <input name="title" required maxLength={80} placeholder={L("新增里程碑，例如：正式上架", "New milestone, e.g. Launch")} />
           <button className="btn small" type="submit" disabled={pending}>{L("加入", "Add")}</button>
-        </form>
+        </form>}
       </div>
 
       <div className="project-section">
         <span className="project-label">{L("工作日誌", "Work log")}</span>
-        <form
+        {edit && <form
           className="log-add"
           action={(fd) => {
             const t = String(fd.get("text") ?? "").trim();
@@ -321,7 +395,7 @@ function ProjectCard({
         >
           <input name="text" maxLength={500} placeholder={L("今天做了什麼？", "What did you do today?")} />
           <button className="btn small" type="submit" disabled={pending}>{L("記錄", "Log")}</button>
-        </form>
+        </form>}
         {shownLogs.length ? (
           <ul className="log-list">
             {shownLogs.map((l) => (

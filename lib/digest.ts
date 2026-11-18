@@ -1,5 +1,5 @@
 import "server-only";
-import { callClaude, textOf } from "./ai";
+import { callClaude, noThinking, textOf } from "./ai";
 import { daysBetween, taipeiDate } from "./dates";
 import { CATEGORY_LABEL, db, isDesign, type Category, type Idea } from "./db";
 import { getOwnerContext } from "./owner";
@@ -69,9 +69,12 @@ async function weeklyAdvice(top: Idea[]): Promise<string> {
   if (!top.length) return "";
   const context = await getOwnerContext();
   const list = top.map((i, n) => `${n + 1}. ${i.summary}（${i.category}，綜合 ${i.score_total}）`).join("\n");
+  const model = env.analyzeModel();
   const res = await callClaude({
-    model: env.analyzeModel(),
-    max_tokens: 400,
+    model,
+    max_tokens: 1000,
+    // 不關掉思考的話，Haiku 5.5 會把額度用在思考上，建議變成空白（而且被 catch 吃掉、週報默默少一段）
+    ...noThinking(model),
     system: `你是創業教練，用繁體中文回答，100 字以內，不要條列。產品：${context}`,
     messages: [{ role: "user", content: `這是我這週存的高分點子：\n${list}\n請指出它們的共通趨勢，並建議下週最值得先做的一件事。` }],
   }, 120_000, "weekly_digest");

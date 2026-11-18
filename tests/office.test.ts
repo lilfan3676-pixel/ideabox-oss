@@ -101,9 +101,11 @@ beforeEach(() => {
   });
 });
 
-async function hook(body: Record<string, unknown>, secret = "hook-secret") {
+async function hook(body: Record<string, unknown>, secret = "hook-secret", host?: string) {
   const { POST } = await import("@/app/api/claude/hook/route");
-  const res = await POST(new Request("https://x/api/claude/hook", { method: "POST", headers: { "x-ideabox-hook": secret, "content-type": "application/json" }, body: JSON.stringify(body) }) as any);
+  const headers: Record<string, string> = { "x-ideabox-hook": secret, "content-type": "application/json" };
+  if (host) headers["x-ideabox-host"] = host;
+  const res = await POST(new Request("https://x/api/claude/hook", { method: "POST", headers, body: JSON.stringify(body) }) as any);
   await Promise.all(pending);
   pending.length = 0;
   return res.status;
@@ -172,5 +174,64 @@ describe("Claude Code 回報", () => {
     tables.projects[0].folder = "ideabox";
     await hook({ hook_event_name: "Stop", session_id: "s2", cwd: "/Users/me/ideabox" });
     expect(tables.agent_sessions[0].project_id).toBe(FIT_ID);
+  });
+});
+
+describe("交接（一個 Claude 開新工作階段交給另一個）", () => {
+  it("規則：只認桌面 App 的工具名稱與 local_ 編號，扣掉自己", async () => {
+    const { cleanHostId, handoffTargets, isHandoffTool, handoffLive } = await import("@/lib/officeLogic");
+    expect(isHandoffTool("mcp__ccd_session__start_session")).toBe(true);
+    expect(isHandoffTool("mcp__ccd_session__hand_off_to_session")).toBe(true);
+    expect(isHandoffTool("mcp__ccd_session__dismiss_task")).toBe(false);
+    expect(isHandoffTool("Bash")).toBe(false);
+    expect(cleanHostId("local_abc123")).toBe("local_abc123");
+    expect(cleanHostId("local_; rm -rf /")).toBeNull();
+    expect(cleanHostId(undefined)).toBeNull();
+    expect(handoffTargets([{ type: "text", text: "Started session local_child1 (name: fix-map)" }], "local_me")).toEqual(["local_child1"]);
+    expect(handoffTargets({ text: "local_me local_me" }, "local_me")).toEqual([]);
+    expect(handoffTargets("Proposed task task_ab12cd34", null)).toEqual([]);
+    const now = Date.now();
+    expect(handoffLive({ status: "working", updated_at: new Date(now).toISOString() }, now)).toBe(true);
+    expect(handoffLive({ status: "ended", updated_at: new Date(now).toISOString() }, now)).toBe(false);
+    expect(handoffLive(undefined, now)).toBe(false);
+  });
+  it("交出去的 Claude 開了新工作階段 → 記一筆；接手的開工後對得上；只是提議（沒有編號）不記", async () => {
+    await hook({ hook_event_name: "UserPromptSubmit", session_id: "parent", cwd: "/Users/me/ai/Fit", prompt: "幫我把地圖動畫交給另一個人做" }, "hook-secret", "local_parent");
+    expect(tables.agent_sessions[0].host_id).toBe("local_parent");
+    // 提議卡片：回傳只有 task_ 編號
+    await hook({ hook_event_name: "PostToolUse", session_id: "parent", tool_name: "mcp__ccd_session__start_session", tool_input: { title: "修地圖動畫", initiation: "own_initiative" }, tool_response: [{ type: "text", text: "Proposed task_ab12cd34" }] }, "hook-secret", "local_parent");
+    expect(tables.agent_handoffs).toHaveLength(0);
+    // 真的開了
+    const started = { hook_event_name: "PostToolUse", session_id: "parent", tool_name: "mcp__ccd_session__start_session", tool_input: { title: "修地圖動畫 token=abcdef123456" }, tool_response: [{ type: "text", text: "Started local_child1" }] };
+    await hook(started, "hook-secret", "local_parent");
+    await hook(started, "hook-secret", "local_parent"); // 重送不重複
+    expect(tables.agent_handoffs).toHaveLength(1);
+    expect(tables.agent_handoffs[0]).toMatchObject({ from_session: "parent", to_host: "local_child1" });
+    expect(tables.agent_handoffs[0].title).not.toContain("abcdef123456");
+
+    const { listOffice } = await import("@/lib/office");
+    expect((await listOffice()).handoffs[0]).toMatchObject({ from: "parent", to: null }); // 接手的還沒回報
+    await hook({ hook_event_name: "SessionStart", session_id: "child", cwd: "/Users/me/ai/Fit" }, "hook-secret", "local_child1");
+    expect((await listOffice()).handoffs[0]).toMatchObject({ from: "parent", to: "child" });
+  });
+  it("沒帶編號（舊版腳本、終端機）照常運作", async () => {
+    expect(await hook({ hook_event_name: "SessionStart", session_id: "plain", cwd: "/Users/me/ai/Fit" })).toBe(200);
+    expect(tables.agent_sessions[0].host_id).toBeUndefined();
+    expect((await listOffice2()).handoffs).toEqual([]);
+  });
+});
+const listOffice2 = async () => (await import("@/lib/office")).listOffice();
+
+describe("辦公室的重點數字", () => {
+  it("工作中、等你、休息中、下班；交接只算台北時間的今天", async () => {
+    const { officeCounts } = await import("@/lib/officeLogic");
+    const now = Date.parse("2026-11-18T01:00:00Z"); // 台北 11/18 09:00
+    const s = (status: AgentSession["status"], minAgo: number) => ({ status, updated_at: new Date(now - minAgo * 60_000).toISOString() });
+    const c = officeCounts(
+      [s("working", 1), s("working", 15), s("waiting", 2), s("permission", 3), s("idle", 5), s("ended", 1), s("working", 45)],
+      [{ created_at: "2026-11-17T16:30:00Z" }, { created_at: "2026-11-17T15:30:00Z" }, { created_at: "2026-11-18T00:10:00Z" }], // 台北 11/18 00:30、11/17 23:30、11/18 08:10
+      now,
+    );
+    expect(c).toEqual({ working: 1, needYou: 2, idle: 2, off: 2, handoffsToday: 2 });
   });
 });

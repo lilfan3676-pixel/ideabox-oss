@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireOwner } from "@/lib/auth";
+import { requireOwner, requireProjectEdit } from "@/lib/auth";
+import { byWho, type Access } from "@/lib/accessLogic";
 import { parseTime } from "@/lib/appTime";
 import { isIsoDate } from "@/lib/dates";
 import { db } from "@/lib/db";
@@ -97,38 +98,53 @@ export async function setNextStep(id: string, text: string): Promise<ProjectResu
   return done();
 }
 
+/** 合夥人改的：日誌記上名字 */
+const who = (a: Access) => (a.owner ? undefined : a.name);
+
+/** 主人或這個專案「可編輯」的合夥人；沒權限回傳 null（不丟錯，畫面顯示沒存成功） */
+async function editor(projectId: string | null | undefined): Promise<Access | null> {
+  if (!isUuid(projectId)) return null;
+  return requireProjectEdit(projectId).catch(() => null);
+}
+
+/** 找出某筆里程碑／排程屬於哪個專案 */
+async function projectOf(table: "project_milestones" | "project_events", id: string): Promise<string | null> {
+  if (!isUuid(id)) return null;
+  const { data } = await db().from(table).select("project_id").eq("id", id).maybeSingle();
+  return (data as { project_id: string } | null)?.project_id ?? null;
+}
+
 export async function addLog(id: string, text: string): Promise<ProjectResult> {
-  await requireOwner();
+  const a = await editor(id);
   const t = String(text ?? "").trim();
-  if (!isUuid(id) || !t) return { ok: false };
-  await logActivity(id, t, "manual");
+  if (!a || !t) return { ok: false };
+  await logActivity(id, byWho(a, t), "manual");
   return done();
 }
 
 export async function addMilestoneAction(id: string, title: string, due: string): Promise<ProjectResult> {
-  await requireOwner();
+  const a = await editor(id);
   const L = await getL();
   const t = String(title ?? "").trim();
-  if (!isUuid(id)) return { ok: false };
+  if (!a) return { ok: false };
   if (!t || !isIsoDate(due)) return { ok: false, error: L("請填日期和名稱", "Enter a date and a title") };
-  await addMilestone(id, t, due, "manual");
+  await addMilestone(id, t, due, "manual", who(a));
   return done();
 }
 
 export async function toggleMilestone(id: string): Promise<ProjectResult> {
-  await requireOwner();
   if (!isUuid(id)) return { ok: false };
   const { data } = await db().from("project_milestones").select("*").eq("id", id).maybeSingle();
   const m = data as { id: string; project_id: string; title: string; done: boolean } | null;
-  if (!m) return { ok: false };
+  const a = m ? await editor(m.project_id) : null;
+  if (!m || !a) return { ok: false };
   await db().from("project_milestones").update({ done: !m.done }).eq("id", id);
-  if (!m.done) await logActivity(m.project_id, `完成里程碑：${m.title}`, "manual");
+  if (!m.done) await logActivity(m.project_id, byWho(a, `完成里程碑：${m.title}`), "manual");
   return done();
 }
 
 export async function deleteMilestone(id: string): Promise<ProjectResult> {
-  await requireOwner();
-  if (!isUuid(id)) return { ok: false };
+  if (!(await editor(await projectOf("project_milestones", id)))) return { ok: false };
   await db().from("project_milestones").delete().eq("id", id);
   return done();
 }
@@ -168,14 +184,15 @@ export async function syncSlackNow(): Promise<{ ok: boolean; text: string }> {
 const okDate = (s: unknown): s is string => typeof s === "string" && isIsoDate(s);
 
 export async function addEventAction(projectId: string, title: string, start: string, end: string, time?: string): Promise<ProjectResult> {
-  await requireOwner();
+  const a = await editor(projectId);
   const L = await getL();
   const t = String(title ?? "").trim();
-  if (!isUuid(projectId) || !t || !okDate(start)) return { ok: false, error: L("請填標題和日期", "Enter a title and date") };
+  if (!a) return { ok: false, error: L("沒有權限", "Not allowed") };
+  if (!t || !okDate(start)) return { ok: false, error: L("請填標題和日期", "Enter a title and date") };
   const e = okDate(end) && end >= start ? end : start;
   try {
     const { addEvent } = await import("@/lib/projects");
-    const id = await addEvent(projectId, t, start, e, "manual", parseTime(time));
+    const id = await addEvent(projectId, t, start, e, "manual", parseTime(time), who(a));
     if (!id) return { ok: false, error: L("這個排程已經有了", "This item already exists") };
   } catch {
     return parseTime(time)
@@ -186,8 +203,9 @@ export async function addEventAction(projectId: string, title: string, start: st
 }
 
 export async function updateEventAction(id: string, v: { title: string; start: string; end: string; time?: string; projectId: string }): Promise<ProjectResult> {
-  await requireOwner();
   const L = await getL();
+  // 原本的專案和要搬去的專案都要有編輯權限
+  if (!(await editor(await projectOf("project_events", id))) || !(await editor(v.projectId))) return { ok: false, error: L("沒有權限", "Not allowed") };
   const t = String(v.title ?? "").trim().slice(0, 80);
   if (!isUuid(id) || !isUuid(v.projectId) || !t || !okDate(v.start)) return { ok: false, error: L("請填標題和日期", "Enter a title and date") };
   const end = okDate(v.end) && v.end >= v.start ? v.end : v.start;
@@ -204,8 +222,7 @@ export async function updateEventAction(id: string, v: { title: string; start: s
 }
 
 export async function deleteEventAction(id: string): Promise<ProjectResult> {
-  await requireOwner();
-  if (!isUuid(id)) return { ok: false };
+  if (!(await editor(await projectOf("project_events", id)))) return { ok: false };
   await db().from("project_events").delete().eq("id", id);
   return done();
 }

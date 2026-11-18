@@ -8,6 +8,8 @@ import type { BellItem } from "./BellMenu";
 import { IconBell, IconBox, IconGrid, IconLogout, IconPulse } from "./icons";
 import { ALL_PAGES, AppearanceControls } from "./Nav";
 import { metaModules } from "@/lib/modules/meta";
+import { navHrefs } from "@/lib/accessLogic";
+import { useAccess } from "./AccessContext";
 
 const MOBILE = "(max-width: 720px)";
 
@@ -21,10 +23,12 @@ export function MobileTabBar({ items, logout }: { items: BellItem[]; logout: () 
   const L = useL();
   const [sheet, setSheet] = useState<"bell" | "more" | null>(null);
   const total = items.reduce((a, i) => a + i.count, 0);
+  const allowed = navHrefs(useAccess()); // 合夥人只看得到有權限的頁面；主人是 null＝全部
+  const ok = (href: string) => !allowed || allowed.includes(href);
 
   // 手機第一次打開網站時直接到「監控」（之後在「更多」點點子庫仍可正常進入）
   useEffect(() => {
-    if (pathname !== "/" || !window.matchMedia(MOBILE).matches) return;
+    if (pathname !== "/" || !ok("/monitor") || !window.matchMedia(MOBILE).matches) return;
     try {
       if (sessionStorage.getItem("ib-m-home")) return;
       sessionStorage.setItem("ib-m-home", "1");
@@ -54,11 +58,11 @@ export function MobileTabBar({ items, logout }: { items: BellItem[]; logout: () 
   };
 
   // 「更多」選單：底部分頁列以外的頁面
-  const MORE = ALL_PAGES.filter(([href]) => href !== "/monitor");
-  const TABS = metaModules.find((m) => m.mobileTabs?.length)?.mobileTabs ?? [
+  const TABS = (metaModules.find((m) => m.mobileTabs?.length)?.mobileTabs ?? [
     { href: "/monitor", label: "監控", en: "Monitor", icon: <IconPulse size={22} /> },
     { href: "/projects", label: "專案", en: "Projects", icon: <IconBox size={22} /> },
-  ];
+  ]).filter((t) => ok(t.href));
+  const MORE = ALL_PAGES.filter(([href]) => href !== "/monitor" && ok(href));
 
   return (
     <>

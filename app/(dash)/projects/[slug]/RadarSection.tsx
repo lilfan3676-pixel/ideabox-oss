@@ -5,15 +5,17 @@ import { useEffect, useState, useTransition } from "react";
 import { useL } from "@/app/LangProvider";
 import { effectiveStatus, MAX_KEYWORDS, type RadarItem, type RadarReport } from "@/lib/radarLogic";
 import { runRadarNow, saveRadarKeywords } from "../actions";
+import { useAccess } from "../../AccessContext";
 
 // 話題雷達：關鍵字設定＋最新一期整理＋「現在抓一次」。每週日早上 8 點自動抓。
 
 export function RadarSection({ projectId, keywords, reports, ready, enabled, now }: { projectId: string; keywords: string[]; reports: RadarReport[]; ready: boolean; enabled: boolean; now: number }) {
   const L = useL();
   const router = useRouter();
+  const owner = useAccess().owner; // 關鍵字與「現在抓一次」會花錢，只有你能改
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [editing, setEditing] = useState(!keywords.length);
+  const [editing, setEditing] = useState(!keywords.length && owner);
   const [shown, setShown] = useState(0); // 看第幾期
   const latest = reports[0];
   const running = latest && effectiveStatus(latest, now) === "running";
@@ -48,7 +50,7 @@ export function RadarSection({ projectId, keywords, reports, ready, enabled, now
     <section className="glass pd-card radar">
       <div className="radar-head">
         <h2 className="detail-h">{L("話題雷達", "Topic radar")}</h2>
-        {enabled && keywords.length > 0 && (
+        {owner && enabled && keywords.length > 0 && (
           <button type="button" className="btn small" disabled={pending || !!running} onClick={() => run(() => runRadarNow(projectId), L("開始抓了，大約 1～3 分鐘", "Started — about 1–3 minutes"))}>
             {running ? L("抓取中…", "Running…") : L("現在抓一次", "Run now")}
           </button>
@@ -57,7 +59,7 @@ export function RadarSection({ projectId, keywords, reports, ready, enabled, now
       <p className="muted small">
         {L("每週日早上 8 點抓 Threads 上這些關鍵字最近一週的熱門貼文，AI 整理大家在聊什麼、卡在哪；評分高的痛點會自動存成這個專案的點子。", "Every Sunday 8am, collects last week’s top Threads posts for these keywords; AI sums up what people discuss and struggle with. High-scoring pain points are saved as ideas for this project.")}
       </p>
-      {!enabled && <p className="small radar-warn">{L("還沒設定 APIFY_TOKEN（Vercel 環境變數），設定好才會開始抓。", "APIFY_TOKEN isn’t set in Vercel yet; nothing will be collected until it is.")}</p>}
+      {owner && !enabled && <p className="small radar-warn">{L("還沒設定 APIFY_TOKEN（Vercel 環境變數），設定好才會開始抓。", "APIFY_TOKEN isn’t set in Vercel yet; nothing will be collected until it is.")}</p>}
 
       {editing ? (
         <form
@@ -77,7 +79,7 @@ export function RadarSection({ projectId, keywords, reports, ready, enabled, now
       ) : (
         <p className="radar-kw">
           {keywords.map((k) => <span key={k} className="badge">{k}</span>)}
-          <button type="button" className="link-btn small" onClick={() => setEditing(true)}>{L("改關鍵字", "Edit")}</button>
+          {owner && <button type="button" className="link-btn small" onClick={() => setEditing(true)}>{L("改關鍵字", "Edit")}</button>}
         </p>
       )}
       {msg && <p className={`small ${msg.ok ? "muted" : "radar-warn"}`} role="status">{msg.text}</p>}

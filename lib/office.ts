@@ -2,17 +2,45 @@ import "server-only";
 import { callStructured } from "./ai";
 import { db } from "./db";
 import { env } from "./env";
-import { folderName, isRole, maskSecrets, matchProject, revives, KEEP_DAYS, ROLES, statusFor, visibleSessions, worthSummarizing, type AgentSession, type HookPayload } from "./officeLogic";
+import { cleanHostId, folderName, handoffTargets, isHandoffTool, isRole, maskSecrets, matchProject, revives, KEEP_DAYS, ROLES, statusFor, visibleSessions, worthSummarizing, type AgentSession, type Handoff, type HookPayload } from "./officeLogic";
 import { listProjects } from "./projects";
 
 // 辦公室：每個執行中的 Claude Code 是一個小人。Claude Code 的 hook 把事件 POST 到 /api/claude/hook，
 // 這裡記狀態；你交代的事由 AI 濃縮成「職位＋一句話」，原文不存。還沒執行 migration-014 時讀取回傳 ready=false。
 
-export async function listOffice(now = Date.now()): Promise<{ sessions: AgentSession[]; ready: boolean }> {
+export async function listOffice(now = Date.now()): Promise<{ sessions: AgentSession[]; handoffs: Handoff[]; ready: boolean }> {
   const since = new Date(now - KEEP_DAYS * 86_400_000).toISOString();
-  const { data, error } = await db().from("agent_sessions").select("*").gte("updated_at", since).order("started_at", { ascending: true });
-  if (error) return { sessions: [], ready: false };
-  return { sessions: visibleSessions((data ?? []) as AgentSession[], now), ready: true };
+  const [{ data, error }, h] = await Promise.all([
+    db().from("agent_sessions").select("*").gte("updated_at", since).order("started_at", { ascending: true }),
+    db().from("agent_handoffs").select("id, from_session, to_host, title, created_at").gte("created_at", since).order("created_at", { ascending: false }).limit(50),
+  ]);
+  if (error) return { sessions: [], handoffs: [], ready: false };
+  const sessions = visibleSessions((data ?? []) as AgentSession[], now);
+  // 還沒執行 migration-024 就沒有交接紀錄（其他照常）
+  const byHost = new Map(sessions.filter((s) => s.host_id).map((s) => [s.host_id!, s.session_id]));
+  const handoffs: Handoff[] = h.error
+    ? []
+    : ((h.data ?? []) as { id: string; from_session: string; to_host: string; title: string | null; created_at: string }[]).map((r) => ({
+        id: r.id,
+        from: r.from_session,
+        to: byHost.get(r.to_host) ?? null,
+        title: r.title,
+        created_at: r.created_at,
+      }));
+  return { sessions, handoffs, ready: true };
+}
+
+/** 交接：記下這個工作階段在桌面 App 的編號；開了新工作階段就記一筆「誰交給誰」。還沒執行 migration-024 就安靜略過 */
+async function recordHandoff(p: HookPayload, id: string, host: string | null, prevHost: string | null | undefined) {
+  if (host && prevHost !== host) await db().from("agent_sessions").update({ host_id: host }).eq("session_id", id);
+  if (p.hook_event_name !== "PostToolUse" || !isHandoffTool(p.tool_name)) return;
+  const targets = handoffTargets(p.tool_response, host);
+  if (!targets.length) return; // 只是提議、還沒真的開（或你選了「在這裡做」）
+  const raw = p.tool_input?.title;
+  const title = typeof raw === "string" && raw.trim() ? maskSecrets(raw.trim()).slice(0, 60) : null;
+  await db()
+    .from("agent_handoffs")
+    .upsert(targets.map((to_host) => ({ from_session: id, to_host, title })), { onConflict: "from_session,to_host", ignoreDuplicates: true });
 }
 
 type Summary = { role: string; task: string };
@@ -52,9 +80,10 @@ async function summarize(prompt: string, projectName: string | null, prevRole: s
 }
 
 /** 處理一個 hook 事件。回傳要不要在背景做 AI 摘要（給 route 用 after() 跑） */
-export async function recordHook(p: HookPayload): Promise<(() => Promise<void>) | null> {
+export async function recordHook(p: HookPayload, hostHeader?: string | null): Promise<(() => Promise<void>) | null> {
   const id = String(p.session_id ?? "").slice(0, 100);
   if (!id) return null;
+  const host = cleanHostId(hostHeader);
   const status = statusFor(p);
   const now = new Date().toISOString();
 
@@ -86,6 +115,7 @@ export async function recordHook(p: HookPayload): Promise<(() => Promise<void>) 
   } else {
     return null;
   }
+  await recordHandoff(p, id, host, prev?.host_id).catch(() => null);
 
   // 有交代新的事才請 AI 判斷職位與任務（在背景做，不拖慢 Claude Code）
   const prompt = String(p.prompt ?? "");

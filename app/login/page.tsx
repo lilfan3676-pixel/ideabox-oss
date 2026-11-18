@@ -14,7 +14,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <LogoMark size={26} />
         </div>
         <h1>ideabox</h1>
-        <p className="muted">{L("創業家主控台・只限本人登入", "Founder console・owner sign-in only")}</p>
+        <p className="muted">{L("創業家主控台", "Founder console")}</p>
         <label>
           Email
           <input name="email" type="email" autoComplete="email" required />

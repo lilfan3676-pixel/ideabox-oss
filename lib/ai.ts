@@ -69,6 +69,17 @@ export async function callClaude(body: Record<string, unknown>, timeoutMs = 120_
   }
 }
 
+/**
+ * 不需要思考的請求（整理、描述資料）用的 thinking 設定：Haiku 5.5、Sonnet 5.5 預設會先思考，
+ * 會吃掉 max_tokens，額度小時結果沒有文字或被截斷。Haiku 5.5 用 disabled（effort 預設 medium 時可用）；
+ * Sonnet 5.5 不接受 disabled，要用 between_tools。其他模型不帶。
+ */
+export function noThinking(model: string): Record<string, unknown> {
+  if (/^claude-sonnet-5-5/.test(model)) return { thinking: { type: "between_tools" } };
+  if (/^claude-haiku-5-5/.test(model)) return { thinking: { type: "disabled" } };
+  return {};
+}
+
 // 這些模型不接受強制指定工具（tool_choice 的 tool／any 會回 400），改成 auto＋提示一定要用
 const NO_FORCED_TOOL = /^claude-(sonnet-5-5|opus-5-5|fable-5-1|mythos-5-1)/;
 export const canForceTool = (model: string) => !NO_FORCED_TOOL.test(model);

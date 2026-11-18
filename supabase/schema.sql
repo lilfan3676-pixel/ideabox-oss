@@ -321,6 +321,26 @@ create table if not exists public.app_devices (
 );
 alter table public.app_devices enable row level security;
 
+-- 合夥人帳號（可以設定看得到哪些畫面、哪些專案）
+create table if not exists public.members (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  name text not null,
+  project_ids uuid[] not null default '{}',
+  pages text[] not null default '{}',
+  can_edit boolean not null default false,
+  push boolean not null default true,
+  active boolean not null default true,
+  user_id uuid,
+  invite_hash text,
+  invite_exp timestamptz,
+  last_login_at timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table public.members enable row level security;
+alter table public.app_devices add column if not exists member_id uuid references public.members (id) on delete cascade;
+create index if not exists app_devices_member_idx on public.app_devices (member_id);
+
 -- ========== 排程（pg_cron 呼叫你的網站） ==========
 create extension if not exists pg_cron with schema pg_catalog;
 create extension if not exists pg_net with schema extensions;

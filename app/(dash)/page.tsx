@@ -1,6 +1,8 @@
 import { getL } from "@/lib/i18nServer";
 import { Suspense } from "react";
-import { requireOwner } from "@/lib/auth";
+import { requirePage } from "@/lib/auth";
+import { listProjects } from "@/lib/projects";
+import { MemberIdeas } from "./MemberIdeas";
 import { db, isDesign, type Idea } from "@/lib/db";
 import { listFolders } from "@/lib/folders";
 import { ideaProjects } from "@/lib/projects";
@@ -13,7 +15,16 @@ export const maxDuration = 120;
 
 // 點子庫（含設計收藏）：一次載入所有點子與資料夾，切換資料夾、檢視、搜尋都在瀏覽器裡即時完成
 export default async function IdeasPage({ searchParams }: { searchParams: Promise<{ q?: string; sort?: string; folder?: string; adopt?: string; project?: string; min?: string; cat?: string }> }) {
-  await requireOwner();
+  const { access } = await requirePage("ideas");
+  if (!access.owner) {
+    // 合夥人：只看他專案、分析好的點子（唯讀）
+    const { projects } = await listProjects();
+    const mine = projects.filter((p) => access.projects.includes(p.id));
+    const { data } = mine.length
+      ? await db().from("ideas").select("*").in("project_id", mine.map((p) => p.id)).eq("status", "analyzed").order("score_total", { ascending: false, nullsFirst: false }).limit(300)
+      : { data: [] };
+    return <MemberIdeas ideas={(data ?? []) as Idea[]} projects={mine.map((p) => ({ id: p.id, slug: p.slug, name: p.name }))} />;
+  }
   const L = await getL();
   const sp = await searchParams;
   const [{ data, error }, { folders, ready }, pj] = await Promise.all([

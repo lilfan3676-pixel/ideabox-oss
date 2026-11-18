@@ -10,7 +10,7 @@ import { deleteIdea, saveNote, setCategory } from "./actions";
 import { AutoSelect, ConfirmButton, SubmitButton } from "./ConfirmButton";
 import { IconStar } from "./icons";
 import { DupNotice } from "./DupNotice";
-import { SourceButton, useFlagToggle, type CardExtra } from "./ideaUi";
+import { ScoreBlock, SourceButton, useFlagToggle, type CardExtra } from "./ideaUi";
 
 // 設計類（介面設計、GitHub）的卡片、列表列與詳情：跟一般點子放在同一個點子庫，只是長相不同
 
@@ -149,7 +149,7 @@ export function DesignRow({ idea: i, img, onOpen, extra }: { idea: Idea; img?: s
   );
 }
 
-export function DesignDetail({ idea: i, img, now }: { idea: Idea; img?: string; now: number }) {
+export function DesignDetail({ idea: i, img, now, picks }: { idea: Idea; img?: string; now: number; picks?: React.ReactNode }) {
   const L = useL();
   const lang = useLang();
   const d = i.design ?? {};
@@ -172,14 +172,7 @@ export function DesignDetail({ idea: i, img, now }: { idea: Idea; img?: string; 
       <GhMeta idea={i} now={now} />
 
       {i.score_total !== null && (
-        <div className="detail-scores">
-          <div className="score-ring"><b>{i.score_total}</b><span>{L("綜合", "Overall")}</span></div>
-          <div className="scores">
-            <span>{L("可套用", "Applicable")} <b>{i.score_arx}</b></span>
-            <span>{L("好實作", "Easy to build")} <b>{i.score_feasibility}</b></span>
-            <span>{L("參考價值", "Reference value")} <b>{i.score_market}</b></span>
-          </div>
-        </div>
+        <ScoreBlock total={i.score_total} rows={[{ label: L("可套用", "Applicable"), n: i.score_arx }, { label: L("好實作", "Easy to build"), n: i.score_feasibility }, { label: L("參考價值", "Reference value"), n: i.score_market }]} />
       )}
       {!!d.styles?.length && <p className="chips">{d.styles.map((s) => <span key={s}>{s}</span>)}</p>}
       {!!d.learn?.length && (
@@ -188,7 +181,13 @@ export function DesignDetail({ idea: i, img, now }: { idea: Idea; img?: string; 
           <ul className="learn">{d.learn.map((l) => <li key={l}>{l}</li>)}</ul>
         </>
       )}
-      {d.apply && <p className="next">👉 {d.apply}</p>}
+      {d.apply && (
+        <div className="detail-next">
+          <span className="kpi-label">{L("可以怎麼用", "How to apply it")}</span>
+          <p>{d.apply}</p>
+        </div>
+      )}
+      {picks}
 
       <h3 className="detail-h">{L("原文", "Original post")}</h3>
       {i.content ? <p className="content">{i.content}</p> : <p className="muted small">{L("沒有抓到原文內容。", "Couldn’t fetch the original text.")}</p>}

@@ -8,6 +8,13 @@ import { addDays, daysBetween, md, relDay } from "@/lib/format";
 import { useTheme, type Palette } from "@/lib/theme";
 import type { AppEvent, AppMilestone, HomeData } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
+import { getSession } from "@/lib/session";
+
+/** 合夥人的手機沒有這個分頁就不跳過去（舊的配對沒有 tabs＝全部都有） */
+const canSee = (tab: string) => {
+  const tabs = getSession()?.tabs;
+  return !tabs || tabs.includes(tab);
+};
 
 type Next = { kicker: string; time: string | null; title: string; project?: string };
 
@@ -121,7 +128,7 @@ export default function Today() {
               left={<Dot color={projectColor(p.id)} />}
               title={p.name}
               subtitle={[p.stage ? `${p.stage}（${p.stage_index + 1}/${p.stage_count}）` : null, p.next_step ? `下一步：${p.next_step}` : null].filter(Boolean).join("\n")}
-              onPress={() => router.navigate({ pathname: "/projects/[slug]", params: { slug: p.slug } })}
+              onPress={canSee("projects") ? () => router.navigate({ pathname: "/projects/[slug]", params: { slug: p.slug } }) : undefined}
               last={i === active.length - 1}
             />
           ))
@@ -147,7 +154,7 @@ function HeroCard({ t, next, todayCount, milestone }: { t: Palette; next: Next |
   const fg = "#ffffff";
   return (
     <Pressable
-      onPress={() => router.navigate("/calendar")}
+      onPress={() => canSee("calendar") && router.navigate("/calendar")}
       accessibilityRole="button"
       accessibilityLabel={`${next.kicker}，${next.time ?? ""} ${next.title}，${next.project ?? ""}。點一下看月曆`}
       style={({ pressed }) => ({ marginHorizontal: 16, marginTop: 12, borderRadius: 22, padding: 18, paddingBottom: 16, backgroundColor: t.accent, opacity: pressed ? 0.92 : 1, boxShadow: `0px 10px 28px ${soft(t.accent, 0.35)}` })}

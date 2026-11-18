@@ -24,6 +24,7 @@ import { ConfirmButton, SubmitButton } from "../ConfirmButton";
 import { useView } from "../Nav";
 import { useL, useLang } from "@/app/LangProvider";
 import type { Lang } from "@/lib/i18n";
+import { monthCharges, type MonthCharge } from "@/lib/insights";
 
 const VIEWS = ["all", "subs", "once", "ai"] as const;
 // 產品（專案＋ideabox＋共用）由頁面傳進來，顏色照順序
@@ -100,7 +101,13 @@ function CostsInner({
 
   return (
     <>
-      <div className="page-title">
+      <div className="view-line d-only">
+        <span className="muted small">
+          {L(`${Number(month.slice(5))} 月・匯率 1 美元 ≈ ${fx.rate.toFixed(2)} 元`, `US$1 ≈ NT$${fx.rate.toFixed(2)}`)}
+          {fx.fallback ? L("（暫用預設值）", " (default rate)") : fx.day ? L(`（${fx.day.slice(5).replace("-", "/")}）`, ` (${fx.day.slice(5).replace("-", "/")})`) : ""}
+        </span>
+      </div>
+      <div className="page-title m-only">
         <h1>{L("成本", "Costs")}</h1>
         <p className="muted">
           {L(`${Number(month.slice(5))} 月・匯率 1 美元 ≈ ${fx.rate.toFixed(2)} 元`, `${new Date(`${month}-01T00:00:00Z`).toLocaleString("en-US", { month: "long", timeZone: "UTC" })} · US$1 ≈ NT$${fx.rate.toFixed(2)}`)}
@@ -143,6 +150,7 @@ function CostsInner({
             <div className="glass stat"><b>{twd(s.ai)}</b><span>{L("本月 AI 用量", "AI usage this month")}</span></div>
           </section>
 
+          <ChargeCalendar charges={monthCharges(expenses, month, fx.rate)} month={month} today={today} />
           <div className="insight-grid">
             <section className="glass panel">
               <h3>{L("依產品", "By product")}</h3>
@@ -235,6 +243,15 @@ function BudgetCard({ budget, summary: b }: { budget: Budget | null; summary: Bu
         <span className="muted small">{L(`從第一筆紀錄 ${budget.start.replaceAll("-", "/")} 起算`, `Since your first record (${budget.start})`)}</span>
         <button type="button" className="btn ghost small push" onClick={() => setEditing(true)}>{L("修改", "Edit")}</button>
       </div>
+      <div className="budget-body">
+      <div className="budget-gauge d-only" role="img" aria-label={L(`剩餘 ${(100 - pct).toFixed(0)}%`, `${(100 - pct).toFixed(0)}% left`)}>
+        <svg viewBox="0 0 200 112" aria-hidden>
+          <path className="track" d="M12 100A88 88 0 0 1 188 100" pathLength={100} />
+          <path className="used" d="M12 100A88 88 0 0 1 188 100" pathLength={100} strokeDasharray={`${pct} 100`} />
+        </svg>
+        <div><b>{over ? "0%" : `${(100 - pct).toFixed(0)}%`}</b><span>{L("剩餘", "left")}</span></div>
+      </div>
+      <div className="budget-main">
       <div className="budget-nums">
         <div><span>{L("總預算", "Budget")}</span><b>{twd(b.total)}</b></div>
         <div><span>{L("總支出", "Spent")}</span><b>{twd(b.spent)}</b></div>
@@ -255,6 +272,56 @@ function BudgetCard({ budget, summary: b }: { budget: Budget | null; summary: Bu
             ? L("目前沒有支出", "No spending yet")
             : L(`平均每月 ${twd(b.perMonth)}，照這個速度約可再撐 ${b.runway >= 120 ? "10 年以上" : `${b.runway.toFixed(1)} 個月`}`, `Avg ${twd(b.perMonth)}/month — about ${b.runway >= 120 ? "10+ years" : `${b.runway.toFixed(1)} months`} left at this pace`)}
       </p>
+      </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------- 扣款月曆（電腦版）：這個月每天實際扣多少，最右邊是每週小計 ----------
+
+function ChargeCalendar({ charges, month, today }: { charges: MonthCharge[]; month: string; today: string }) {
+  const L = useL();
+  const [y, m] = month.split("-").map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lead = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7; // 週一開始
+  const cells: (number | null)[] = [...Array<null>(lead).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
+  while (cells.length % 7) cells.push(null);
+  const weeks = Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+  const dayOf = (d: number) => `${month}-${String(d).padStart(2, "0")}`;
+  const on = (d: number) => charges.filter((c) => c.day === dayOf(d));
+  const sum = (list: MonthCharge[]) => list.reduce((s, c) => s + c.twd, 0);
+  const WD: [string, string][] = [["一", "Mon"], ["二", "Tue"], ["三", "Wed"], ["四", "Thu"], ["五", "Fri"], ["六", "Sat"], ["日", "Sun"]];
+  return (
+    <section className="glass panel charge-cal d-only" aria-label={L("本月扣款月曆", "Charges this month")}>
+      <div className="panel-head">
+        <h3>{L(`${m} 月扣款月曆`, "Charges this month")}</h3>
+        <span className="muted small charge-legend"><i className="paid" />{L("已付", "Paid")}<i className="due" />{L("還沒扣", "Not yet")}</span>
+      </div>
+      {!charges.length && <p className="muted small">{L("這個月沒有扣款。", "No charges this month.")}</p>}
+      <div className="charge-grid">
+        {WD.map(([zh, en]) => <span key={zh} className="charge-wd">{L(zh, en)}</span>)}
+        <span className="charge-wd sum">{L("這週小計", "This week")}</span>
+        {weeks.map((week, wi) => {
+          const weekTotal = sum(week.flatMap((d) => (d ? on(d) : [])));
+          return [
+            ...week.map((d, di) => {
+              const list = d ? on(d) : [];
+              const due = d ? dayOf(d) > today : false;
+              return (
+                <div key={`${wi}-${di}`} className={`charge-day ${list.length ? (due ? "due" : "paid") : ""} ${d && dayOf(d) === today ? "today" : ""}`} title={list.map((c) => `${c.name} ${twd(c.twd)}`).join("\n") || undefined}>
+                  <span className="charge-num">{d ?? ""}</span>
+                  {list.length > 0 && <b>{twd(sum(list))}</b>}
+                  {list.length > 0 && <span className="charge-name">{list.length > 1 ? L(`${list[0].name} 等 ${list.length} 筆`, `${list[0].name} +${list.length - 1}`) : list[0].name}</span>}
+                </div>
+              );
+            }),
+            <div key={`${wi}-sum`} className={`charge-day sum ${weekTotal ? "" : "none"}`}>
+              <b>{weekTotal ? twd(weekTotal) : "—"}</b>
+            </div>,
+          ];
+        })}
+      </div>
     </section>
   );
 }

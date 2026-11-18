@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { rememberProjectOrder } from "@/components/ui";
 import { api, ApiError } from "./api";
+import { getSession, saveSession } from "./session";
 import { setWebTheme } from "./theme";
 
 type State<T> = { data: T | null; error: string | null; loading: boolean; refreshing: boolean };
@@ -30,6 +31,10 @@ export function useApi<T>(path: string, opts?: { pollMs?: number }) {
       if (Array.isArray(list)) rememberProjectOrder(list.map((x) => x.id));
       // 首頁帶回網頁目前的主題，App 跟著換
       setWebTheme((data as { theme?: { theme?: unknown; mode?: unknown } }).theme);
+      // 首頁也帶回這支手機能看的分頁：你在網頁改了合夥人的權限，App 跟著換
+      const tabs = (data as { access?: { tabs?: unknown } }).access?.tabs;
+      const s = getSession();
+      if (s && Array.isArray(tabs) && tabs.join() !== (s.tabs ?? []).join()) saveSession({ ...s, tabs: tabs.map(String) }).catch(() => null);
       cache.set(p, data);
       if (pathRef.current === p) setState({ data, error: null, loading: false, refreshing: false });
     } catch (e) {

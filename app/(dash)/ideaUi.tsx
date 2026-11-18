@@ -227,3 +227,26 @@ export function DetailPanel({
     document.body,
   );
 }
+
+// ---------- 詳情裡的分數區：左邊大字綜合分數，右邊三項橫條 ----------
+
+export function ScoreBlock({ total, rows }: { total: number; rows: { label: string; n: number | null }[] }) {
+  const L = useL();
+  return (
+    <div className="detail-scores">
+      <div className="score-big">
+        <span className="kpi-label">{L("綜合分數", "Overall")}</span>
+        <b>{total}</b>
+      </div>
+      <div className="score-bars">
+        {rows.map((r) => (
+          <div className="bar-row" key={r.label}>
+            <span className="bar-label">{r.label}</span>
+            <span className="bar-track" aria-hidden><i style={{ width: `${Math.max(0, Math.min(10, r.n ?? 0)) * 10}%` }} /></span>
+            <span className="bar-n">{r.n ?? "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

@@ -4,6 +4,11 @@ import { stageName, type Milestone, type Project } from "./projectLogic";
 
 // 加前綴避免把原本討論用的頻道（例如 #myapp）當成進度
 export const SLACK_PREFIX = "progress-";
+/** 一次回報最多新增幾個里程碑（送件時程總表這種一次十幾個日期的也要收得下） */
+export const MAX_MILESTONES = 20;
+
+const normTitle = (t: string) => t.toLowerCase().replace(/[\s，,。.、：:（）()【】\[\]「」\-—~～]/g, "");
+const sameTitle = (a: string, b: string) => !!a && !!b && (a === b || a.includes(b) || b.includes(a));
 
 /** 專案對應的 Slack 頻道名稱：沒設定就用「progress-短名」（myapp → #progress-myapp） */
 export const slackChannelFor = (p: Pick<Project, "slug" | "slack_channel">) =>
@@ -49,18 +54,22 @@ export function planSlackUpdate(
   const idx = want ? p.stages.findIndex((s) => s.toLowerCase() === want.toLowerCase()) : -1;
   if (idx >= 0 && idx !== p.stage) patch.stage = idx;
   const seen = new Set(existing.filter((m) => m.project_id === p.id).map((m) => `${m.title}|${m.due}`));
+  // 同一天、標題互相包含（AI 重讀時措辭略有不同）也算重複
+  const mineMs = existing.filter((m) => m.project_id === p.id).map((m) => ({ t: normTitle(m.title), d: m.due }));
   const milestones: SlackPlan["milestones"] = [];
   for (const m of Array.isArray(ai.milestones) ? ai.milestones : []) {
     const title = String(m?.title ?? "").trim().slice(0, 80);
     const due = String(m?.due ?? "").trim();
     if (!title || !isIsoDate(due) || daysBetween(today, due) < 0) continue;
     const key = `${title}|${due}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key) || mineMs.some((m) => m.d === due && sameTitle(m.t, normTitle(title)))) continue;
     seen.add(key);
+    mineMs.push({ t: normTitle(title), d: due });
     milestones.push({ title, due });
   }
   // 排程：日期要對、結束不早於開始，可以是過去 60 天內（補記）；重複的不加
   const seenEv = new Set(existingEvents.filter((e) => e.project_id === p.id).map((e) => `${e.title}|${e.start_date}`));
+  const mineEv = existingEvents.filter((e) => e.project_id === p.id).map((e) => ({ t: normTitle(e.title), d: e.start_date }));
   const events: SlackPlan["events"] = [];
   for (const e of Array.isArray(ai.events) ? ai.events : []) {
     const title = String(e?.title ?? "").trim().slice(0, 80);
@@ -68,11 +77,12 @@ export function planSlackUpdate(
     const end = String(e?.end ?? "").trim() || start;
     if (!title || !isIsoDate(start) || !isIsoDate(end) || end < start || daysBetween(start, today) > 60 || daysBetween(start, end) > 366) continue;
     const key = `${title}|${start}`;
-    if (seenEv.has(key)) continue;
+    if (seenEv.has(key) || mineEv.some((x) => x.d === start && sameTitle(x.t, normTitle(title)))) continue;
     seenEv.add(key);
+    mineEv.push({ t: normTitle(title), d: start });
     events.push({ title, start, end });
   }
-  return { log: String(ai.log ?? "").trim().slice(0, 300), patch, milestones: milestones.slice(0, 5), events: events.slice(0, 20) };
+  return { log: String(ai.log ?? "").trim().slice(0, 300), patch, milestones: milestones.slice(0, MAX_MILESTONES), events: events.slice(0, 20) };
 }
 
 export const planChanges = (plan: SlackPlan) =>

@@ -15,6 +15,8 @@ export type AgentSession = {
   started_at: string;
   updated_at: string;
   ended_at: string | null;
+  /** 桌面 App 給這個工作階段的編號（local_…，migration-024），用來對「誰把工作交給誰」 */
+  host_id?: string | null;
 };
 
 /** AI 只能從這些職位裡挑（小人的衣服顏色跟著職位） */
@@ -92,6 +94,9 @@ export type HookPayload = {
   prompt?: string;
   message?: string;
   notification_type?: string;
+  tool_name?: string;
+  tool_input?: { title?: unknown } & Record<string, unknown>;
+  tool_response?: unknown;
 };
 
 /** Claude Code 的事件 → 小人狀態；null = 不改狀態 */
@@ -158,7 +163,7 @@ const RANK: Record<AgentStatus, number> = { working: 0, permission: 1, waiting: 
 export function staffOf(list: AgentSession[], now: number): Staff[] {
   const groups = new Map<string, AgentSession[]>();
   for (const s of list) {
-    const key = `${s.project_id ?? "lobby"}:${s.role ?? "新人"}`;
+    const key = staffKey(s);
     groups.set(key, [...(groups.get(key) ?? []), s]);
   }
   return [...groups].map(([key, g]) => {
@@ -171,4 +176,48 @@ export function staffOf(list: AgentSession[], now: number): Staff[] {
       sessions: g.filter((s) => onDuty(s, now)).length,
     };
   }).sort((a, b) => a.started_at.localeCompare(b.started_at));
+}
+
+// ---------- 交接：一個 Claude 開了新的工作階段，把工作交給它 ----------
+
+/** 交接紀錄（migration-024）。to = 接手那個工作階段的 session_id（還沒回報過就是 null） */
+export type Handoff = { id: string; from: string; to: string | null; title: string | null; created_at: string };
+
+const HOST_RE = /^local_[A-Za-z0-9_-]{4,80}$/;
+/** 桌面 App 的工作階段編號長這樣：local_…；其他的不收 */
+export const cleanHostId = (v: unknown): string | null => (typeof v === "string" && HOST_RE.test(v.trim()) ? v.trim() : null);
+
+/** 桌面 App 開新工作階段的工具（start_session、hand_off_to_session） */
+export const isHandoffTool = (name: unknown) => typeof name === "string" && /(^|__)ccd_session__(start_session|hand_off_to_session)$/.test(name);
+
+/** 從工具回傳的內容裡找出新工作階段的編號（local_…），扣掉自己，最多 4 個 */
+export function handoffTargets(resp: unknown, own: string | null): string[] {
+  let text = "";
+  try {
+    text = typeof resp === "string" ? resp : JSON.stringify(resp ?? "");
+  } catch {
+    return [];
+  }
+  const ids = [...new Set(text.match(/local_[A-Za-z0-9_-]{4,80}/g) ?? [])].filter((x) => x !== own);
+  return ids.slice(0, 4);
+}
+
+/** 辦公室裡「人」的代號：同專案同職位＝同一個人（跟 staffOf 一樣） */
+export const staffKey = (s: Pick<AgentSession, "project_id" | "role">) => `${s.project_id ?? "lobby"}:${s.role ?? "新人"}`;
+
+/** 接手的人還在做（工作中、等你回覆、等你同意）＝ 畫連線 */
+export const handoffLive = (to: Pick<AgentSession, "status" | "updated_at"> | undefined, now: number) =>
+  !!to && ["working", "waiting", "permission"].includes(displayStatus(to, now));
+
+/** 辦公室最上面那排數字：現在幾個在工作、幾個在等你、幾個休息中、今天（台北時間）交接幾次 */
+export function officeCounts(sessions: Pick<AgentSession, "status" | "updated_at">[], handoffs: Pick<Handoff, "created_at">[], now: number): { working: number; needYou: number; idle: number; off: number; handoffsToday: number } {
+  const st = sessions.map((s) => displayStatus(s, now));
+  const day = (ms: number) => new Date(ms + 8 * 3_600_000).toISOString().slice(0, 10); // 台北沒有日光節約時間
+  return {
+    working: st.filter((x) => x === "working").length,
+    needYou: st.filter((x) => x === "waiting" || x === "permission").length,
+    idle: st.filter((x) => x === "idle").length,
+    off: st.filter((x) => x === "ended").length,
+    handoffsToday: handoffs.filter((h) => day(Date.parse(h.created_at)) === day(now)).length,
+  };
 }

@@ -75,14 +75,14 @@ export type ServerModule = {
 
 // ---------- 畫面用（瀏覽器也會載入，只能放純資料與圖示） ----------
 
-export type NavPage = { href: string; label: string; en: string; short?: string; shortEn?: string; hideSm?: boolean; /** 排在哪個頁面後面 */ after?: string };
+export type NavPage = { href: string; label: string; en: string; short?: string; shortEn?: string; hideSm?: boolean; /** 排在哪個頁面後面 */ after?: string; /** 左側頁面圖示列的圖示（沒給就用格狀圖示） */ icon?: React.ReactNode };
 export type RailItem = { key: string; label: string; en: string; icon: React.ReactNode };
 
 export type MetaModule = {
   key: string;
-  /** 上方膠囊多出的頁面 */
+  /** 左側頁面圖示列多出的頁面 */
   pages?: NavPage[];
-  /** 左側圖示列：新頁面的檢視，或加到既有頁面（例如 /monitor）後面的檢視 */
+  /** 頂部列的檢視切換：新頁面的檢視，或加到既有頁面（例如 /monitor）後面的檢視 */
   rails?: Record<string, { def?: string; items: RailItem[] }>;
   /** 手機版底部分頁列最左邊的兩個分頁（沒有就用點子庫、專案） */
   mobileTabs?: { href: string; label: string; en: string; icon: React.ReactNode }[];

@@ -27,7 +27,11 @@
   .theme-dock { display: none !important; }
 
   /* ---------- 版面：拿掉上方列，改成底部分頁 ---------- */
-  .topbar { display: none !important; }
+  /* 頂部列只留「這一頁的檢視切換」（.rail），頁面名稱與搜尋、通知、帳號都收掉 */
+  .topbar { display: contents !important; }
+  .topbar > :not(.rail) { display: none !important; }
+  .page-rail { display: none !important; }
+  .shell { display: block; }
   .frame { border: 0 !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important; }
   .frame-body {
     flex-direction: column; gap: 0;
@@ -37,7 +41,7 @@
   /* 頁內檢視：從底部懸浮膠囊改成上方可左右滑的小分段 */
   .rail {
     position: sticky !important; top: 0; left: auto !important; bottom: auto !important; transform: none !important;
-    z-index: 20; margin: 0 -14px 4px; padding: calc(6px + env(safe-area-inset-top)) 14px 8px;
+    z-index: 20; margin: 0 0 4px; padding: calc(6px + env(safe-area-inset-top)) 14px 8px;
     background: var(--bg-a); overflow-x: auto; scrollbar-width: none;
     flex-direction: row; min-width: 0; width: auto; max-width: none; align-self: stretch;
   }
@@ -60,7 +64,6 @@
   .stat { padding: 10px 12px !important; border-radius: 16px; }
   .stat b { font-size: 20px !important; }
   .stat span:last-child { font-size: 12px; }
-  .stat-icon { display: none !important; }
   .panel { padding: 14px !important; gap: 8px; border-radius: 18px; }
   .glass { border-radius: 18px; }
   .notice { font-size: 13px; }
@@ -70,8 +73,6 @@
 
   .idea, .design-body { padding: 14px !important; gap: 6px; }
   .summary, button.summary { font-size: 15px; }
-  .score-ring { width: 48px; height: 48px; }
-  .score-ring b { font-size: 16px; }
   .scores span { font-size: 12px; padding: 2px 8px; }
   .actions { flex-wrap: wrap; }
 
@@ -90,11 +91,10 @@
   .shot { width: 72px; }
 
   /* 持股、成本 */
-  .insight-grid, .detail-grid { gap: 10px; }
+  .insight-grid { gap: 10px; }
   .holding, .expense { padding: 12px !important; }
-  .holding-price b, .holding-pnl b, .expense-amount b { font-size: 15px; }
+  .holding-price b, .expense-amount b { font-size: 15px; }
   .holding-meta { font-size: 12px; }
-  .donut { width: 92px !important; height: 92px !important; }
   .chart-box { height: 320px !important; }
   .chart-legend { font-size: 12px; gap: 2px 10px; }
   .metric-row, .stats.four { grid-template-columns: repeat(2, 1fr); }
@@ -206,6 +206,11 @@
   .office-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 10px; }
   .office-row-task { grid-column: 1 / -1; order: 3; white-space: normal; }
   .office-row-time { display: none; }
+  /* 手機一次一間房間，不畫跨房間的連線（看下面的交接紀錄） */
+  .office-handoff-lines { display: none; }
+  .office-ho-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+  .office-ho-row .office-row-time { display: block; grid-column: 1 / -1; }
+  .office-ho-row .office-row-task { grid-column: 1 / -1; order: 3; }
 }
 
 /* 專案：手機上一欄，時間軸可以橫向滑 */
@@ -213,7 +218,6 @@
   .project-grid { grid-template-columns: 1fr; }
   .project-card { padding: 14px; }
   .timeline { overflow-x: auto; }
-  .timeline-track { min-width: 560px; }
   .schedule { overflow-x: auto; padding: 14px; }
   .schedule-grid { --label: 84px; min-width: 620px; }
   .calendar { padding: 12px 8px; }

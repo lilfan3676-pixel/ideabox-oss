@@ -15,7 +15,7 @@ export type AppProject = {
 };
 export type MonitorItem = { service: string; product: string; label: string; ok: boolean; changed_at: string; error: string | null };
 
-export type HomeData = { today: string; theme?: { theme: string; mode: string }; projects: AppProject[]; events: AppEvent[]; milestones: AppMilestone[]; monitor: MonitorItem[] };
+export type HomeData = { today: string; theme?: { theme: string; mode: string }; access?: { owner: boolean; name: string | null; tabs: string[]; can_edit: boolean }; projects: AppProject[]; events: AppEvent[]; milestones: AppMilestone[]; monitor: MonitorItem[] };
 export type CalendarData = { month: string; projects: { id: string; name: string }[]; events: AppEvent[]; milestones: AppMilestone[] };
 export type ProjectData = {
   project: { id: string; slug: string; name: string; status: AppProject["status"]; stages: string[]; stage_index: number; next_step: string | null; description: string | null; links: Record<string, string>; last_activity_at: string };

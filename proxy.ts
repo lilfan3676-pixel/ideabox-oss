@@ -25,7 +25,8 @@ export async function proxy(request: NextRequest) {
 
   // getClaims：驗證並在需要時刷新登入憑證（新版專案可在本機驗證，比 getUser 快）
   const { data } = await supabase.auth.getClaims();
-  const isLogin = request.nextUrl.pathname.startsWith("/login");
+  // 邀請連結（設密碼）不用先登入
+  const isLogin = request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname === "/join";
   if (!data?.claims && !isLogin) {
     const to = request.nextUrl.clone();
     to.pathname = "/login";

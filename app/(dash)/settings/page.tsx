@@ -14,6 +14,8 @@ import { Suspense } from "react";
 import { listDevices } from "@/lib/app";
 import { AppPairing } from "./AppPairing";
 import { removeAppDevice } from "./appActions";
+import { PartnersPanel } from "./PartnersPanel";
+import { listMembers } from "@/lib/members";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -32,6 +34,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           digest: <DigestSection />,
           learn: <LearnSection />,
           app: <AppSection />,
+          partners: <PartnersSection />,
         }}
       />
     </Suspense>
@@ -84,7 +87,7 @@ async function StatusSection({ email }: { email: string }) {
   return (
     <section className="glass panel">
       <h3>{L("連線狀態", "Connections")}</h3>
-      <ul className="status-list">
+      <ul className="status-list status-cards">
         <li><span>{L("登入帳號", "Signed in as")}</span><b>{email}</b></li>
         <li><span>{L("Telegram 主人 ID", "Telegram owner ID")}</span><b>{owner ? `✅ ${owner}` : L("❌ 尚未設定", "❌ Not set")}</b></li>
         <li><span>Telegram Webhook</span><b>{hook?.url ? L("✅ 已連線", "✅ Connected") : L("❌ 尚未設定", "❌ Not set")}</b></li>
@@ -199,7 +202,8 @@ async function LearnSection() {
 }
 
 async function AppSection() {
-  const [L, { devices, ready }] = await Promise.all([getL(), listDevices()]);
+  const [L, { devices: all, ready }] = await Promise.all([getL(), listDevices()]);
+  const devices = all.filter((d) => !d.member_id); // 合夥人的手機在「合夥人」分頁
   const fmt = (iso: string) => new Date(iso).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
   return (
     <section className="glass panel">
@@ -236,5 +240,24 @@ async function AppSection() {
         </>
       )}
     </section>
+  );
+}
+
+async function PartnersSection() {
+  const [L, { members, ready }, { projects }, { devices }] = await Promise.all([getL(), listMembers(), listProjects().catch(() => ({ projects: [] })), listDevices()]);
+  if (!ready) {
+    return (
+      <section className="glass panel">
+        <h3>{L("合夥人", "Partners")}</h3>
+        <p className="error">{L("請先在 ideabox 的 Supabase 執行 migration-026-members.sql。", "Run migration-026-members.sql on the ideabox Supabase first.")}</p>
+      </section>
+    );
+  }
+  return (
+    <PartnersPanel
+      members={members}
+      projects={projects.filter((p) => p.status !== "done").map((p) => ({ id: p.id, name: p.name }))}
+      devices={devices.map((d) => ({ id: d.id, name: d.name, member_id: d.member_id ?? null, push_token: d.push_token, last_seen_at: d.last_seen_at }))}
+    />
   );
 }

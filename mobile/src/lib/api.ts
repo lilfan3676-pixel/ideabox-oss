@@ -55,9 +55,9 @@ export async function pair(server: string, code: string, name: string): Promise<
   if (res.status === 400) throw new ApiError("bad_code", MESSAGES.bad_code);
   if (res.status === 500) throw new ApiError("server", "ideabox 沒辦法配對，請確認已執行 migration-022-app.sql。");
   if (!res.ok) throw new ApiError("server", "這個網址好像不是 ideabox，請確認有打對。");
-  const body = (await res.json().catch(() => ({}))) as { token?: string };
+  const body = (await res.json().catch(() => ({}))) as { token?: string; tabs?: unknown };
   if (!body.token) throw new ApiError("server", MESSAGES.server);
-  await saveSession({ server, token: body.token });
+  await saveSession({ server, token: body.token, tabs: Array.isArray(body.tabs) ? body.tabs.map(String) : undefined });
 }
 
 export async function unpair(): Promise<void> {

@@ -88,6 +88,24 @@ describe("Slack 規則", () => {
     );
     expect(ev.events.map((e) => e.title)).toEqual(["封測第二輪", "補記上週"]);
   });
+
+  it("一則時程總表有十幾個日期也全部收下；同一天措辭不同的不重複加", () => {
+    const p = proj();
+    const many = Array.from({ length: 12 }, (_, i) => ({ title: `Z${String(i + 1).padStart(2, "0")} 工作`, due: `2026-12-${String(i + 1).padStart(2, "0")}` }));
+    expect(planSlackUpdate(p, { log: "", next_step: "", stage: "", milestones: many }, TODAY, []).milestones).toHaveLength(12);
+    const again = planSlackUpdate(
+      p,
+      { log: "", next_step: "", stage: "", milestones: [
+        { title: "Z01 寄信問產學處", due: "2026-11-20" },
+        { title: "Z02 團隊資格備妥", due: "2026-11-22" },
+      ], events: [{ title: "Z09 定稿", start: "2026-12-01", end: "2026-12-06" }] },
+      TODAY,
+      [{ project_id: FIT_ID, title: "寄信問產學處", due: "2026-11-20" }, { project_id: CAFE_ID, title: "Z02 團隊資格備妥", due: "2026-11-22" }],
+      [{ project_id: FIT_ID, title: "Z09 定稿（全體成員）", start_date: "2026-12-01" }],
+    );
+    expect(again.milestones).toEqual([{ title: "Z02 團隊資格備妥", due: "2026-11-22" }]);
+    expect(again.events).toEqual([]);
+  });
 });
 
 // ---------- 伺服器流程 ----------

@@ -22,21 +22,6 @@ body { overflow-x: clip; }
 /* 展開的摺疊區塊（已刪除的規則等）淡入 */
 details[open] > :not(summary) { animation: fadeUp .26s ease-out both; }
 
-/* ---------- 上方膠囊：選中底色滑動 ---------- */
-.pill-nav { position: relative; }
-.pill-nav a { position: relative; z-index: 1; }
-.pill-nav.has-indicator a.active { background: transparent; }
-.pill-indicator {
-  position: absolute; left: 0; z-index: 0; pointer-events: none;
-  border-radius: 999px; background: var(--ink);
-  transform: translateX(var(--x));
-}
-.pill-indicator.ready {
-  /* 稍微超出再回彈，比較不死板 */
-  transition: transform .42s cubic-bezier(.3, 1.3, .45, 1), width .42s cubic-bezier(.3, 1.3, .45, 1), background .3s;
-}
-[data-theme="portal"] .pill-indicator { border-radius: 0; transform: translateX(var(--x)) skewX(-8deg); }
-
 /* ---------- 深淺色、主題切換（View Transitions） ---------- */
 ::view-transition-old(root),
 ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
@@ -62,12 +47,12 @@ html[data-vt="theme"]::view-transition-new(root) {
 
 /* 沒有 View Transitions 的瀏覽器：顏色至少柔和地過渡 */
 @supports not (view-transition-name: none) {
-  body, .glass, .pill-nav, .rail-group, .btn { transition: background-color .35s, color .35s, border-color .35s; }
+  body, .glass, .rail-group, .btn { transition: background-color .35s, color .35s, border-color .35s; }
 }
 
 /* ---------- 減少動態效果：全部改成瞬間切換 ---------- */
 @media (prefers-reduced-motion: reduce) {
   .page-enter.from-right, .page-enter.from-left, .view-swap, .slide-next, .slide-prev, .badge.adopted, .folder-bulk-bar, details[open] > :not(summary) { animation: none; }
-  .pill-indicator.ready, .idea.lift, .idea-row, .design-card.lift { transition: none; }
+  .idea.lift, .idea-row, .design-card.lift { transition: none; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }

@@ -90,7 +90,7 @@ export async function runMonitor(opts: { notify: boolean }) {
   const { data: prevRows } = await db().from("monitor_status").select("*");
   const prev = new Map(((prevRows ?? []) as StatusRow[]).map((r) => [r.service, r]));
   const messages: string[] = [];
-  const pushes: { title: string; body: string }[] = []; // 手機 App 只推掛掉／恢復
+  const pushes: { title: string; body: string; product: string }[] = []; // 手機 App 只推掛掉／恢復
   const rows: StatusRow[] = [];
 
   for (const o of outcomes) {
@@ -98,11 +98,11 @@ export async function runMonitor(opts: { notify: boolean }) {
     const name = serviceName(o);
     if (event === "down") {
       messages.push(`🔴 <b>${esc(name)}</b> 連不上\n原因：${esc(row.last_error ?? "沒有回應")}`);
-      pushes.push({ title: `🔴 ${name} 連不上`, body: `原因：${row.last_error ?? "沒有回應"}` });
+      pushes.push({ title: `🔴 ${name} 連不上`, body: `原因：${row.last_error ?? "沒有回應"}`, product: o.product });
     } else if (event === "up") {
       const dur = downSince ? `（中斷約 ${durationText(now.getTime() - new Date(downSince).getTime())}）` : "";
       messages.push(`🟢 <b>${esc(name)}</b> 已恢復正常${dur}`);
-      pushes.push({ title: `🟢 ${name} 已恢復正常`, body: dur ? dur.replace(/[（）]/g, "") : "服務已經恢復" });
+      pushes.push({ title: `🟢 ${name} 已恢復正常`, body: dur ? dur.replace(/[（）]/g, "") : "服務已經恢復", product: o.product });
     }
 
     if (o.stats) {
@@ -121,6 +121,15 @@ export async function runMonitor(opts: { notify: boolean }) {
 
   if (rows.length) await db().from("monitor_status").upsert(rows);
   if (opts.notify && messages.length) await sendToOwner(messages.join("\n\n")).catch(() => null);
-  if (opts.notify) for (const m of pushes) await sendPushSafe({ ...m, data: { screen: "today" } });
+  if (opts.notify && pushes.length) {
+    // 合夥人的手機：有開監控、而且這個產品對得到他的專案才收
+    const { listProjects } = await import("./projects");
+    const { productForSlug } = await import("./monitorLogic");
+    const { projects } = await listProjects().catch(() => ({ projects: [] as { id: string; slug: string }[] }));
+    for (const { product, ...m } of pushes) {
+      const projectIds = projects.filter((p) => productForSlug(p.slug, products) === product).map((p) => p.id);
+      await sendPushSafe({ ...m, data: { screen: "today" } }, { projectIds, pages: ["monitor"] });
+    }
+  }
   return { checked: outcomes.length, down: rows.filter((r) => !r.ok).length, notified: opts.notify ? messages.length : 0 };
 }

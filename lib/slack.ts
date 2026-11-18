@@ -67,7 +67,7 @@ const AI_SCHEMA = {
     stage: { type: "string", description: "回報明確說進到哪個階段時，填階段清單中的名稱；沒提到就留空字串" },
     milestones: {
       type: "array",
-      description: "回報裡有明確日期的目標（例如上線日、截止日）；沒有就空陣列",
+      description: "回報裡有明確日期的目標（例如上線日、截止日），每一個有日期的項目都要列出來，不要省略；沒有就空陣列",
       items: {
         type: "object",
         properties: { title: { type: "string", description: "20 字內" }, due: { type: "string", description: "YYYY-MM-DD" } },
@@ -108,7 +108,8 @@ async function readReport(p: Project, msgs: SlackMessage[], today: string): Prom
     toolName: "save_project_update",
     toolDescription: "儲存從 Slack 回報整理出的專案狀態",
     schema: AI_SCHEMA,
-    maxTokens: 600,
+    // 一則時程總表可能有十幾個日期，600 會被截斷
+    maxTokens: 3000,
     purpose: "slack_progress",
   });
 }

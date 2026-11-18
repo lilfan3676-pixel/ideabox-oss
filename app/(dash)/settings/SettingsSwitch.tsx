@@ -11,8 +11,9 @@ const sections = (L: Translate): Record<string, { title: string; desc: string }>
   digest: { title: L("週報", "Weekly digest"), desc: L("每週日晚上的點子精選與補助提醒", "Sunday-night idea picks and grant reminders") },
   learn: { title: L("AI 學習", "AI learning"), desc: L("AI 從你的採用、刪除、備註與補助標記學到的偏好", "Preferences the AI learned from what you adopt, delete, note and mark") },
   app: { title: L("手機 App", "Phone app"), desc: L("配對 ideabox App，在手機上看排程、專案並收推送通知", "Pair the ideabox app to see schedules and projects and get push notifications") },
+  partners: { title: L("合夥人", "Partners"), desc: L("讓共同創辦人等合夥人登入網頁與 App，你決定他看得到哪些畫面和專案", "Let co-founders sign in to the web and app; you decide which screens and projects they see") },
 });
-const KEYS = ["desc", "status", "theme", "digest", "learn", "app"];
+const KEYS = ["desc", "status", "theme", "digest", "learn", "app", "partners"];
 
 /** 各區塊都已在伺服器準備好，左側圖示列切換時直接顯示，不用重新載入 */
 export function SettingsSwitch({ panels, msg }: { panels: Record<string, React.ReactNode>; msg?: string }) {
@@ -21,12 +22,17 @@ export function SettingsSwitch({ panels, msg }: { panels: Record<string, React.R
   const section = sections(L)[view];
   return (
     <>
-      <div className="page-title">
+      {/* 電腦版：一行說明現在是哪一區；手機版照舊 */}
+      <div className="view-line d-only">
+        <h2>{section.title}</h2>
+        <span className="muted small">{section.desc}</span>
+      </div>
+      <div className="page-title m-only">
         <h1>{L("設定", "Settings")}</h1>
         <p className="muted">{section.title}・{section.desc}</p>
       </div>
       {msg && <p className="notice glass">{msg}</p>}
-      <div className="settings-single stagger" key={view}>
+      <div className={`settings-single settings-v-${view} stagger`} key={view}>
         {panels[view]}
       </div>
     </>

@@ -38,14 +38,10 @@ export default function RootLayout() {
             name="settings"
             options={{
               presentation: "formSheet",
-              headerShown: true,
-              title: "設定",
+              // 不用原生標題列：標題放在頁面裡跟著捲動，背景漸層才會一路接到頂端
+              headerShown: false,
               sheetGrabberVisible: true,
               sheetAllowedDetents: [0.75, 1],
-              headerTintColor: t.accent,
-              headerTitleStyle: { color: t.text },
-              headerStyle: { backgroundColor: t.bgA },
-              headerShadowVisible: false,
             }}
           />
         </Stack.Protected>

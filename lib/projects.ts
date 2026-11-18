@@ -57,14 +57,14 @@ export async function updateProject(p: Project, patch: Partial<Project>, source:
   for (const n of notes) await db().from("project_logs").insert({ project_id: p.id, text: n, source });
 }
 
-export async function addMilestone(projectId: string, title: string, due: string, source: LogSource) {
+export async function addMilestone(projectId: string, title: string, due: string, source: LogSource, who?: string) {
   const { error } = await db().from("project_milestones").insert({ project_id: projectId, title: title.slice(0, 80), due });
   if (error) throw error;
-  await logActivity(projectId, `新增里程碑：${title}（${due}）`, source);
+  await logActivity(projectId, `${who ? `${who}：` : ""}新增里程碑：${title}（${due}）`, source);
 }
 
 /** 新增排程（同專案、同標題、同開始日的不重複加）；回傳新的 id，重複或失敗回傳 null */
-export async function addEvent(projectId: string, title: string, start: string, end: string, source: "manual" | "telegram" | "slack", time: string | null = null): Promise<string | null> {
+export async function addEvent(projectId: string, title: string, start: string, end: string, source: "manual" | "telegram" | "slack", time: string | null = null, who?: string): Promise<string | null> {
   const t = title.trim().slice(0, 80);
   const { data: dup } = await db().from("project_events").select("id").eq("project_id", projectId).eq("title", t).eq("start_date", start).limit(1);
   if (dup?.length) return null;
@@ -72,7 +72,7 @@ export async function addEvent(projectId: string, title: string, start: string, 
   // 有時間才寫 start_time（還沒執行 migration-022 時，沒時間的排程照常能新增）
   const { data, error } = await db().from("project_events").insert(time ? { ...row, start_time: time } : row).select("id").single();
   if (error) throw error;
-  await logActivity(projectId, `新增排程：${t}（${start === end ? start : `${start}～${end}`}${time ? ` ${time}` : ""}）`, source === "manual" ? "manual" : source);
+  await logActivity(projectId, `${who ? `${who}：` : ""}新增排程：${t}（${start === end ? start : `${start}～${end}`}${time ? ` ${time}` : ""}）`, source === "manual" ? "manual" : source);
   return (data as { id: string }).id;
 }
 
@@ -99,7 +99,10 @@ export async function runProjectTick(now = Date.now()): Promise<{ sent: boolean;
   for (const m of milestones.filter((x) => d.remind1.includes(x.id) || d.remind7.includes(x.id))) {
     const days = daysBetween(today, m.due);
     const label = days <= 0 ? "今天" : days === 1 ? "明天" : `還有 ${days} 天`;
-    await sendPushSafe({ title: `📅 ${label}：${m.title}`, body: `${names.get(m.project_id) ?? ""} 里程碑（${m.due.slice(5).replace("-", "/")}）`.trim(), data: { screen: "today" } });
+    await sendPushSafe(
+      { title: `📅 ${label}：${m.title}`, body: `${names.get(m.project_id) ?? ""} 里程碑（${m.due.slice(5).replace("-", "/")}）`.trim(), data: { screen: "today" } },
+      { projectIds: [m.project_id], pages: ["projects", "calendar"] },
+    );
   }
   return { sent: !!msgId, reminded: d.remind7.length + d.remind1.length, stale: d.staleAsked.length };
 }

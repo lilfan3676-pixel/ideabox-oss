@@ -10,7 +10,41 @@ let pos: AssistantPos | null = null; // null＝預設右下角
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
+// 大小：兩根手指縮放，1＝原本大小
+const SCALE_KEY = "ideabox.assistant.scale";
+export const SCALE_MIN = 0.7;
+export const SCALE_MAX = 1.8;
+let scale = 1;
+export const clampScale = (s: number) => Math.min(SCALE_MAX, Math.max(SCALE_MIN, s));
+
+export function saveAssistantScale(s: number | null) {
+  scale = s == null ? 1 : clampScale(s);
+  emit();
+  if (s == null) SecureStore.deleteItemAsync(SCALE_KEY).catch(() => null);
+  else SecureStore.setItemAsync(SCALE_KEY, String(scale)).catch(() => null);
+}
+
+export function useAssistantScale(): number {
+  return useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    () => scale,
+  );
+}
+
 export async function loadAssistantPos() {
+  try {
+    const rawScale = await SecureStore.getItemAsync(SCALE_KEY);
+    const n = rawScale ? Number(rawScale) : NaN;
+    if (Number.isFinite(n)) {
+      scale = clampScale(n);
+      emit();
+    }
+  } catch {
+    /* 讀不到就用原本大小 */
+  }
   try {
     const raw = await SecureStore.getItemAsync(KEY);
     if (raw) {

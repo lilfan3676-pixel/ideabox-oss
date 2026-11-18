@@ -1,6 +1,7 @@
 import { officeData } from "@/lib/app";
-import { appJson, withDevice } from "@/lib/appRoute";
+import { appJson, forbidden, withDevice } from "@/lib/appRoute";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withDevice(async () => appJson({ ok: true, ...(await officeData()) }));
+// 辦公室只有你看得到
+export const GET = withDevice(async (_req, _device, access) => (access.owner ? appJson({ ok: true, ...(await officeData()) }) : forbidden()));

@@ -19,6 +19,8 @@ import { DupNotice, DupTitles } from "./DupNotice";
 import { createFolder, deleteFolder, deleteIdea, moveIdeas, renameFolder, reorderFolders, saveNote, setCategory, setFolderColor, setIdeaProject, toggleAdopted, toggleBrief } from "./actions";
 import { AutoSelect, ConfirmButton, SubmitButton } from "./ConfirmButton";
 import { DesignCard, DesignDetail, DesignRow } from "./designUi";
+import { ideaInsights } from "@/lib/insights";
+import { BarRow, Delta, Kpi, KpiRow, SidePanel } from "./Insight";
 
 type ProjectName = { id: string; name: string };
 // 卡片上的分數標籤用：有指定專案就顯示專案名稱，沒有就顯示「相關」（對最相關專案的分數）
@@ -29,7 +31,7 @@ function useScoreLabel(i: Idea): string {
   return (i.project_id && names.get(i.project_id)) || L("相關", "Fit");
 }
 import { IconGrid, IconSearch } from "./icons";
-import { ContextMenu, DetailPanel, FlagToggle, LayoutToggle, SourceButton, useFlagToggle, useLayout, type CardExtra, type FlagKey } from "./ideaUi";
+import { ContextMenu, DetailPanel, ScoreBlock, FlagToggle, LayoutToggle, SourceButton, useFlagToggle, useLayout, type CardExtra, type FlagKey } from "./ideaUi";
 import { useView } from "./Nav";
 
 const VIEWS = ["all", "week", "todo", "adopted", "brief"] as const;
@@ -41,6 +43,7 @@ const VIEW_LABEL: Record<string, [string, string]> = {
   brief: ["已選入設計簡報", "In the design brief"],
 };
 const WEEK_MS = 7 * 86_400_000;
+const SOURCE_LABEL: Record<Idea["source"], [string, string]> = { threads: ["Threads", "Threads"], text: ["直接寫的想法", "Typed notes"], photo: ["照片", "Photos"], link: ["連結", "Links"] };
 const NONE = "none"; // 「未分類」的網址參數
 // 拖曳時帶的資料種類：點子（可以一次多個）或資料夾（排順序）
 const DRAG_IDEAS = "application/x-ideabox-ideas";
@@ -191,6 +194,8 @@ export function IdeasView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ideas, moved, folders]);
   const briefCount = ideas.filter((i) => i.in_brief).length;
+  // 最上面那排重點數字與右欄（電腦版）
+  const ins = useMemo(() => ideaInsights(ideas, now), [ideas, now]);
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -348,7 +353,45 @@ export function IdeasView({
     <ProjectNames.Provider value={projectNames}>
     <DupTitles.Provider value={dupTitles}>
     <FlagToggle.Provider value={toggleFlag}>
-      <div className="page-title with-action">
+      {/* 電腦版：重點數字卡；手機版照舊用下面的標題列 */}
+      <KpiRow label={L("重點數字", "Key numbers")}>
+        <Kpi
+          pop
+          label={L("本週新點子", "New this week")}
+          value={ins.week}
+          hint={<><Delta now={ins.week} prev={ins.lastWeek} flat={L("跟上週一樣", "Same as last week")} />{ins.week !== ins.lastWeek ? L(" 比上週", " vs last week") : ""}</>}
+          data={ins.weekly}
+        />
+        <Kpi label={L("已採用", "Adopted")} value={ins.adopted} hint={L(`全部 ${stats.total} 則`, `of ${stats.total}`)} />
+        <Kpi
+          label={L("平均綜合分數", "Average score")}
+          value={ins.avgScore ?? "—"}
+          hint={ins.top ? L(`最高 ${ins.top.score}：${ins.top.title}`, `Top ${ins.top.score}: ${ins.top.title}`) : L("還沒有分析好的點子", "Nothing analyzed yet")}
+        />
+        <Kpi
+          tone={stats.todo + ins.dups ? "warn" : ""}
+          label={L("等你處理", "Needs you")}
+          value={stats.todo + ins.dups}
+          hint={L(`待補充 ${stats.todo}・可能重複 ${ins.dups}`, `${stats.todo} need input · ${ins.dups} possible dups`)}
+        />
+      </KpiRow>
+      {(view !== "all" || activeFolder || q.trim() || hasFilters(filters) || briefCount > 0) && (
+        <div className="view-line d-only">
+          {(view !== "all" || activeFolder || q.trim() || hasFilters(filters)) && (
+            <>
+              <h2>{activeFolder ? title : L(...VIEW_LABEL[view])}</h2>
+              <span className="muted small">
+                {L(`${list.length} 則`, `${list.length} ideas`)}
+                {q.trim() ? L(`・搜尋「${q.trim()}」`, ` · “${q.trim()}”`) : ""}
+              </span>
+            </>
+          )}
+          {briefCount ? (
+            <Link href="/design/brief" className="btn primary small push">{L(`產生設計簡報（${briefCount}）`, `Build design brief (${briefCount})`)}</Link>
+          ) : null}
+        </div>
+      )}
+      <div className="page-title with-action m-only">
         <div>
           <h1>{title}</h1>
           <p className="muted title-stats">
@@ -460,6 +503,9 @@ export function IdeasView({
         <LayoutToggle layout={layout} onChange={setLayout} />
       </div>
 
+      {/* 左邊是點子，右邊一欄是概況（電腦版） */}
+      <div className="page-split">
+      <div className="page-main">
       {!list.length && (
         <div className="glass empty">
           {view === "brief"
@@ -492,43 +538,71 @@ export function IdeasView({
           {(sec.key !== "adopted" || adoptedOpen) && renderItems(sec.items, sec.key)}
         </section>
       ))}
+      </div>
+      <aside className="page-aside d-only" aria-label={L("點子概況", "Idea overview")}>
+        <SidePanel title={L("分類分佈", "By category")}>
+          {ins.cats.length ? ins.cats.map((c) => <BarRow key={c.cat ?? "none"} label={catLabel(c.cat, lang)} n={c.n} max={ins.cats[0].n} />) : <p className="muted small">{L("還沒有點子", "No ideas yet")}</p>}
+        </SidePanel>
+        <SidePanel title={L("從哪裡收進來", "Where they came from")}>
+          {ins.sources.length ? ins.sources.map((s) => (
+            <div className="side-row" key={s.source}>
+              <span className="grow">{L(...SOURCE_LABEL[s.source])}</span>
+              <b>{s.n}</b>
+            </div>
+          )) : <p className="muted small">{L("還沒有點子", "No ideas yet")}</p>}
+        </SidePanel>
+        {ins.nudge && (
+          <SidePanel className="nudge" title={L("提醒", "Reminder")}>
+            <p>{L(`「${ins.nudge.title}」已經存了 ${ins.nudge.days} 天，要不要動手？`, `“${ins.nudge.title}” has been sitting for ${ins.nudge.days} days — time to act?`)}</p>
+            <button type="button" className="btn small" onClick={() => setOpenId(ins.nudge!.id)}>{L("打開這個點子", "Open this idea")}</button>
+          </SidePanel>
+        )}
+      </aside>
+      </div>
 
       <DetailPanel open={!!opened} onClose={() => setOpenId(null)} title={opened?.summary ?? L("點子內容", "Idea")} url={opened?.url}>
         {opened && (
           <>
-            {foldersReady && (
-              <label className="folder-pick">
-                <span className="muted small">{L("資料夾", "Folder")}</span>
-                <select value={folderOf(opened) ?? ""} onChange={(e) => move([opened.id], e.target.value || null)}>
-                  <option value="">{L("未分類", "Unfiled")}</option>
-                  {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                </select>
-              </label>
-            )}
-            {projects.length > 0 && (
-              <label className="folder-pick">
-                <span className="muted small">{L("專案", "Project")}</span>
-                <select
-                  value={opened.project_id ?? ""}
-                  disabled={projectBusy}
-                  onChange={async (e) => {
-                    setProjectBusy(true);
-                    setNotice({ text: L("針對新專案重新分析中…", "Re-analyzing for the new project…") });
-                    const r = await setIdeaProject(opened.id, e.target.value).catch(() => ({ ok: false, error: undefined }));
-                    setProjectBusy(false);
-                    setNotice(r.ok ? { text: L("已重新分析", "Re-analyzed") } : { text: r.error ?? L("沒有改成功", "Couldn’t change it"), bad: true });
-                  }}
-                >
-                  <option value="">{L("不指定（看最相關的專案）", "None (closest project)")}</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </label>
-            )}
-            {isDesign(opened.category) ? (
-              <DesignDetail idea={opened} img={opened.image_path ? urls[opened.image_path] : undefined} now={now} />
-            ) : (
-              <IdeaDetail idea={opened} />
-            )}
+            {(() => {
+              // 資料夾與專案：放在詳情裡（標籤下面），兩個並排
+              const picks = (foldersReady || projects.length > 0) && (
+                <div className="detail-picks">
+                {foldersReady && (
+                  <label className="folder-pick">
+                    <span className="muted small">{L("資料夾", "Folder")}</span>
+                    <select value={folderOf(opened) ?? ""} onChange={(e) => move([opened.id], e.target.value || null)}>
+                      <option value="">{L("未分類", "Unfiled")}</option>
+                      {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                {projects.length > 0 && (
+                  <label className="folder-pick">
+                    <span className="muted small">{L("專案", "Project")}</span>
+                    <select
+                      value={opened.project_id ?? ""}
+                      disabled={projectBusy}
+                      onChange={async (e) => {
+                        setProjectBusy(true);
+                        setNotice({ text: L("針對新專案重新分析中…", "Re-analyzing for the new project…") });
+                        const r = await setIdeaProject(opened.id, e.target.value).catch(() => ({ ok: false, error: undefined }));
+                        setProjectBusy(false);
+                        setNotice(r.ok ? { text: L("已重新分析", "Re-analyzed") } : { text: r.error ?? L("沒有改成功", "Couldn’t change it"), bad: true });
+                      }}
+                    >
+                      <option value="">{L("不指定（看最相關的專案）", "None (closest project)")}</option>
+                      {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                </div>
+              );
+              return isDesign(opened.category) ? (
+                <DesignDetail idea={opened} img={opened.image_path ? urls[opened.image_path] : undefined} now={now} picks={picks} />
+              ) : (
+                <IdeaDetail idea={opened} picks={picks} />
+              );
+            })()}
           </>
         )}
       </DetailPanel>
@@ -1015,7 +1089,7 @@ function IdeaRow({ idea: i, onOpen, extra }: { idea: Idea; onOpen: () => void; e
 }
 
 /** 詳細面板內容 */
-export function IdeaDetail({ idea: i }: { idea: Idea }) {
+export function IdeaDetail({ idea: i, picks }: { idea: Idea; picks?: React.ReactNode }) {
   const scoreLabel = useScoreLabel(i);
   const L = useL();
   const lang = useLang();
@@ -1034,18 +1108,22 @@ export function IdeaDetail({ idea: i }: { idea: Idea }) {
       <DupNotice idea={i} />
 
       {i.score_total !== null && (
-        <div className="detail-scores">
-          <div className="score-ring"><b>{i.score_total}</b><span>{L("綜合", "Overall")}</span></div>
-          <div className="scores">
-            <span>{scoreLabel} <b>{i.score_arx}</b></span>
-            <span>{L("可行", "Feasible")} <b>{i.score_feasibility}</b></span>
-            <span>{L("市場", "Market")} <b>{i.score_market}</b></span>
-          </div>
+        <ScoreBlock total={i.score_total} rows={[{ label: scoreLabel, n: i.score_arx }, { label: L("可行", "Feasible"), n: i.score_feasibility }, { label: L("市場", "Market"), n: i.score_market }]} />
+      )}
+      {i.next_step && (
+        <div className="detail-next">
+          <span className="kpi-label">{L("下一步", "Next step")}</span>
+          <p>{i.next_step}</p>
         </div>
       )}
-      {i.score_reason && <p className="muted">{i.score_reason}</p>}
-      {i.next_step && <p className="next">👉 {i.next_step}</p>}
+      {i.score_reason && (
+        <>
+          <h3 className="detail-h">{L("AI 的理由", "Why the AI scored it this way")}</h3>
+          <p className="detail-reason">{i.score_reason}</p>
+        </>
+      )}
       {!!i.tags?.length && <p className="tags">{i.tags.map((t) => <span key={t}>#{t}</span>)}</p>}
+      {picks}
 
       <h3 className="detail-h">{L("原文", "Original post")}</h3>
       {i.content ? <p className="content">{i.content}</p> : <p className="muted small">{L("沒有抓到原文內容。在下面補一句重點，AI 就會重新分析。", "Couldn’t fetch the original text. Add a short note below and the AI will re-analyze it.")}</p>}

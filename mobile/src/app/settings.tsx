@@ -7,7 +7,7 @@ import { Alert, Linking, Pressable, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Hero } from "@/components/blocks";
 import { Row, Screen, Section } from "@/components/ui";
-import { saveAssistantPos, useAssistantPos } from "@/lib/assistantPos";
+import { saveAssistantPos, saveAssistantScale, useAssistantPos, useAssistantScale } from "@/lib/assistantPos";
 import { unpair } from "@/lib/api";
 import { disablePush, pushStatus, registerPush } from "@/lib/push";
 import { useSession } from "@/lib/session";
@@ -58,12 +58,16 @@ export default function Settings() {
 
   const { pref, web } = useThemeState();
   const assistant = useAssistantPos();
+  const assistantScale = useAssistantScale();
   const version = `${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "?"}（編譯 ${Application.nativeBuildVersion ?? "開發版"}）`;
   const host = session?.server.replace(/^https?:\/\//, "") ?? "—";
   const pushOn = perm === "granted";
 
   return (
     <Screen>
+      <Text style={{ textAlign: "center", fontSize: 17, fontWeight: "700", color: t.text, marginTop: 22, marginBottom: 6 }} accessibilityRole="header">
+        設定
+      </Text>
       {/* 主角：連線與推送狀態；推送沒開就是橘色卡，直接給按鈕 */}
       {pushOn ? (
         <Hero kicker="已連線" title={host} sub={`推送已開啟・版本 ${version}`} tone="soft" color={t.ok} />
@@ -125,11 +129,16 @@ export default function Settings() {
         )}
       </Section>
 
-      <Section title="小助手" footer="把小助手拖到想放的地方就會停在那裡；拖到螢幕左右邊緣會收起來，只露半個頭，點一下就跳出來。">
+      <Section title="小助手" footer="把小助手拖到想放的地方就會停在那裡；拖到螢幕左右邊緣會縮成圓形頭像，點一下就跳出來；兩根手指捏住他可以放大縮小。">
         <Row
           title={assistant?.edge ? "目前收在邊邊" : assistant ? "目前在你拖過去的位置" : "目前在右下角"}
           subtitle={assistant ? "點一下回到右下角" : undefined}
           onPress={assistant ? () => saveAssistantPos(null) : undefined}
+        />
+        <Row
+          title={assistantScale === 1 ? "原本大小" : `目前是原本的 ${Math.round(assistantScale * 100)}%`}
+          subtitle={assistantScale === 1 ? undefined : "點一下回到原本大小"}
+          onPress={assistantScale === 1 ? undefined : () => saveAssistantScale(null)}
           last
         />
       </Section>

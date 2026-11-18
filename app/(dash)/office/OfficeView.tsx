@@ -1,11 +1,12 @@
 "use client";
 
-import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useL, useLang } from "@/app/LangProvider";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
-import { displayStatus, isRole, onDuty, ROLE_EN, ROLES, staffOf, type AgentSession, type AgentStatus } from "@/lib/officeLogic";
+import { displayStatus, handoffLive, isRole, officeCounts, onDuty, ROLE_EN, ROLES, staffKey, staffOf, type AgentSession, type AgentStatus, type Handoff } from "@/lib/officeLogic";
 import { stageName, type Project } from "@/lib/projectLogic";
 import { ContextMenu } from "../ideaUi";
+import { Kpi, KpiRow } from "../Insight";
 import { changeSessionRole, dismissSession } from "./actions";
 
 // 像素辦公室：一棟樓，每個專案一個等角視角的房間，大廳放對不到專案的；每個執行中的 Claude Code 是一個小人。
@@ -38,9 +39,13 @@ type ProjectRoom = Pick<Project, "id" | "name" | "stages" | "stage" | "status">;
 /** 只比較會影響畫面的欄位，沒變就不重畫 */
 const sig = (list: AgentSession[]) => list.map((s) => `${s.session_id}|${s.status}|${s.role}|${s.task}|${s.project_id}|${s.updated_at}`).join(";");
 
-export function OfficeView({ projects, sessions: initial, now: initialNow }: { projects: ProjectRoom[]; sessions: AgentSession[]; now: number }) {
+const hsig = (list: Handoff[]) => list.map((h) => `${h.id}|${h.to}`).join(";");
+
+export function OfficeView({ projects, sessions: initial, handoffs: initialHandoffs, now: initialNow }: { projects: ProjectRoom[]; sessions: AgentSession[]; handoffs: Handoff[]; now: number }) {
   const L = useL();
   const [sessions, setSessions] = useState(initial);
+  const [handoffs, setHandoffs] = useState(initialHandoffs);
+  const lastH = useRef(hsig(initialHandoffs));
   // 「休息中」的判斷用到現在時間；取到分鐘就好，避免每次輪詢都讓所有房間重畫
   const [now, setNow] = useState(Math.floor(initialNow / 60_000) * 60_000);
   const last = useRef(sig(initial));
@@ -58,7 +63,12 @@ export function OfficeView({ projects, sessions: initial, now: initialNow }: { p
       try {
         const res = await fetch("/api/office/state", { cache: "no-store", signal: ctrl.signal });
         if (!res.ok) return;
-        const r = (await res.json()) as { sessions: AgentSession[]; now: number };
+        const r = (await res.json()) as { sessions: AgentSession[]; handoffs?: Handoff[]; now: number };
+        const hs = r.handoffs ?? [];
+        if (hsig(hs) !== lastH.current) {
+          lastH.current = hsig(hs);
+          setHandoffs(hs);
+        }
         const list = visible(r.sessions);
         const next = sig(list);
         if (next !== last.current) {
@@ -95,6 +105,23 @@ export function OfficeView({ projects, sessions: initial, now: initialNow }: { p
       lobby: staff.filter((s) => !s.project_id || !known.has(s.project_id)),
     };
   }, [projects, sessions, now]);
+
+  // 交接：接手的人還在做（工作中／等你）就在兩個人之間畫連線；同一個人（同專案同職位）就在泡泡上標「接手中」
+  const live = useMemo(() => {
+    const byId = new Map(sessions.map((s) => [s.session_id, s]));
+    const lines: { id: string; from: string; to: string; title: string | null }[] = [];
+    const taking = new Set<string>();
+    for (const h of handoffs) {
+      const a = byId.get(h.from);
+      const b = h.to ? byId.get(h.to) : undefined;
+      if (!a || !b || !handoffLive(b, now)) continue;
+      const [ka, kb] = [staffKey(a), staffKey(b)];
+      taking.add(kb);
+      if (ka !== kb && !lines.some((l) => l.from === ka && l.to === kb)) lines.push({ id: h.id, from: ka, to: kb, title: h.title });
+    }
+    return { lines, taking };
+  }, [handoffs, sessions, now]);
+  const takingIn = (people: AgentSession[]) => people.filter((p) => live.taking.has(p.session_id)).map((p) => p.session_id).join(",");
 
   // 手機：一次一間房間（左右滑或點上面的專案標籤），下面列這間的 Claude
   const roomList = [
@@ -178,10 +205,18 @@ export function OfficeView({ projects, sessions: initial, now: initialNow }: { p
   const working = sessions.filter((s) => displayStatus(s, now) === "working").length;
   const needYou = sessions.filter((s) => ["waiting", "permission"].includes(displayStatus(s, now))).length;
   const inOffice = sessions.filter((s) => onDuty(s, now)).length;
+  const counts = officeCounts(sessions, handoffs, now);
 
   return (
     <>
-      <div className="page-title">
+      {/* 電腦版：重點數字卡；手機版照舊用下面的標題列 */}
+      <KpiRow label={L("現在狀況", "Right now")}>
+        <Kpi pop label={L("工作中", "Working")} value={counts.working} hint={L(`上班 ${inOffice} 人・下班 ${counts.off} 人`, `${inOffice} in · ${counts.off} off`)} />
+        <Kpi tone={counts.needYou ? "warn" : ""} label={L("等你回覆", "Waiting for you")} value={counts.needYou} hint={counts.needYou ? L("右邊清單標橘色的那幾個", "The ones marked in the list") : L("沒有人在等你", "Nobody is waiting")} />
+        <Kpi label={L("休息中", "Idle")} value={counts.idle} hint={L("坐在位子上、暫時沒在做事", "At their desk, not doing anything")} />
+        <Kpi label={L("今天交接", "Handoffs today")} value={counts.handoffsToday} hint={L("一個 Claude 把事情交給另一個", "One Claude passing work to another")} />
+      </KpiRow>
+      <div className="page-title m-only">
         <h1>{L("辦公室", "Office")}</h1>
         <p className="muted title-stats">
           <span>{L(`上班 ${inOffice}`, `${inOffice} in`)}</span>
@@ -191,10 +226,14 @@ export function OfficeView({ projects, sessions: initial, now: initialNow }: { p
         </p>
       </div>
 
+      {/* 電腦版寬螢幕：大樓在左、清單和交接紀錄在右；窄一點清單在上面（跟原本一樣） */}
+      <div className="office-split">
       <div className="office-list-desk">
         <SessionList sessions={sessions} projects={projects} now={now} onDismiss={dismiss} onRole={changeRole} />
+        <HandoffList handoffs={handoffs} sessions={sessions} projects={projects} now={now} />
       </div>
 
+      <div className="office-main">
       {/* 手機：專案標籤（綠點＝有人在工作、橘點＝在等你） */}
       <div className="office-tabs" ref={tabs} role="tablist" aria-label={L("房間", "Rooms")}>
         {roomList.map((r) => {
@@ -218,15 +257,19 @@ export function OfficeView({ projects, sessions: initial, now: initialNow }: { p
         </div>
         <div className="building-floors stagger" ref={track} onScroll={onTrackScroll}>
           {rooms.projects.map((r, i) => (
-            <Room key={r.project.id} roomKey={r.project.id} active={r.project.id === active} title={r.project.name} sub={stageName(r.project)} paused={r.project.status === "paused"} color={r.color} people={r.people} now={now} floor={`${Math.floor(i / 2) + 2}F`} />
+            <Room key={r.project.id} taking={takingIn(r.people)} roomKey={r.project.id} active={r.project.id === active} title={r.project.name} sub={stageName(r.project)} paused={r.project.status === "paused"} color={r.color} people={r.people} now={now} floor={`${Math.floor(i / 2) + 2}F`} />
           ))}
-          <Room lobby roomKey={LOBBY} active={active === LOBBY} title={L("大廳", "Lobby")} sub={L("其他資料夾", "Other folders")} color="#94a3b8" people={rooms.lobby} now={now} floor="1F" />
+          <Room lobby taking={takingIn(rooms.lobby)} roomKey={LOBBY} active={active === LOBBY} title={L("大廳", "Lobby")} sub={L("其他資料夾", "Other folders")} color="#94a3b8" people={rooms.lobby} now={now} floor="1F" />
+          {live.lines.length > 0 && <HandoffLines lines={live.lines} stamp={last.current} />}
         </div>
       </section>
+      </div>
+      </div>
 
       {/* 手機：目前這間的 Claude（換房間時淡入） */}
       <div className="office-list-m view-swap" key={active}>
         <SessionList mobile title={activeRoom.name} sessions={byRoom(active)} projects={projects} now={now} onDismiss={dismiss} onRole={changeRole} />
+        <HandoffList handoffs={handoffs} sessions={sessions} projects={projects} now={now} />
       </div>
     </>
   );
@@ -270,12 +313,12 @@ const SEATS: [number, number][] = [1.45, 3.05, 4.65].flatMap((y) => [1.1, 2.9, 4
 
 const LOBBY = "lobby";
 
-type RoomProps = { roomKey: string; active: boolean; title: string; sub: string; color: string; people: AgentSession[]; now: number; floor: string; paused?: boolean; lobby?: boolean };
+type RoomProps = { taking: string; roomKey: string; active: boolean; title: string; sub: string; color: string; people: AgentSession[]; now: number; floor: string; paused?: boolean; lobby?: boolean };
 
 // 房間裡的人沒變就整間不重畫
-const Room = memo(RoomInner, (a, b) => a.title === b.title && a.active === b.active && a.sub === b.sub && a.color === b.color && a.now === b.now && a.floor === b.floor && a.paused === b.paused && sig(a.people) === sig(b.people));
+const Room = memo(RoomInner, (a, b) => a.title === b.title && a.active === b.active && a.sub === b.sub && a.color === b.color && a.now === b.now && a.floor === b.floor && a.paused === b.paused && a.taking === b.taking && sig(a.people) === sig(b.people));
 
-function RoomInner({ roomKey, active, title, sub, color, people, now, floor, paused = false, lobby = false }: RoomProps) {
+function RoomInner({ taking, roomKey, active, title, sub, color, people, now, floor, paused = false, lobby = false }: RoomProps) {
   const L = useL();
   const gid = useId().replace(/:/g, "");
   const floorSeed = hash(title) % BOOKS.length;
@@ -401,8 +444,8 @@ function RoomInner({ roomKey, active, title, sub, color, people, now, floor, pau
           if (!s) return null;
           const [px, py] = iso(x + 0.35, y - 0.45, 46);
           return (
-            <div key={i} className="office-anchor" style={{ left: pctX(px), top: pctY(py) }}>
-              <Bubble s={s} now={now} lobby={lobby} compact={shown.length > 3} />
+            <div key={i} className="office-anchor" data-staff={s.session_id} style={{ left: pctX(px), top: pctY(py) }}>
+              <Bubble s={s} now={now} lobby={lobby} compact={shown.length > 3} taking={taking.split(",").includes(s.session_id)} />
             </div>
           );
         })}
@@ -569,7 +612,7 @@ const STATUS_LABEL: Record<AgentStatus, [string, string]> = {
 };
 
 /** compact：房間人多時只顯示職位（框的顏色代表狀態），滑過去才展開 */
-function Bubble({ s, now, lobby, compact = false }: { s: AgentSession; now: number; lobby: boolean; compact?: boolean }) {
+function Bubble({ s, now, lobby, compact = false, taking = false }: { s: AgentSession; now: number; lobby: boolean; compact?: boolean; taking?: boolean }) {
   const L = useL();
   const lang = useLang();
   const st = displayStatus(s, now);
@@ -583,6 +626,7 @@ function Bubble({ s, now, lobby, compact = false }: { s: AgentSession; now: numb
       {/* 沒在工作的：顯示待機中，不顯示上次做的事 */}
       <span className="office-status">{st === "ended" ? L("待機中", "Standing by") : L(...STATUS_LABEL[st])}</span>
       {s.task && st !== "ended" && <span className="office-task">{s.task}</span>}
+      {taking && st !== "ended" && <span className="office-taking">{L("↪ 接手中", "↪ Handed off")}</span>}
       {lobby && s.folder && <span className="office-folder">📁 {s.folder}</span>}
     </div>
   );
@@ -748,6 +792,130 @@ function SessionList({
             ))}
           </div>
         </ContextMenu>
+      )}
+    </section>
+  );
+}
+
+// ---------- 交接：連線與時間軸 ----------
+
+/** 接手的人還在做時，兩個人之間一條流動的虛線（量泡泡定位點在畫面上的位置；手機版一次一間房間，不畫） */
+function HandoffLines({ lines, stamp }: { lines: { id: string; from: string; to: string; title: string | null }[]; stamp: string }) {
+  const L = useL();
+  const [paths, setPaths] = useState<{ id: string; d: string; title: string | null }[]>([]);
+  const key = lines.map((l) => `${l.from}>${l.to}`).join(";");
+  const own = useRef<SVGSVGElement>(null);
+  useLayoutEffect(() => {
+    // 用自己的上一層（樓層外框）量；第一次畫面出來時外框的 ref 還沒接上，不能用外面傳進來的 ref
+    const el = own.current?.parentElement;
+    if (!el) return;
+    const measure = () => {
+      const box = el.getBoundingClientRect();
+      const at = (k: string) => {
+        const a = el.querySelector(`[data-staff="${CSS.escape(k)}"]`);
+        if (!a) return null;
+        const r = a.getBoundingClientRect();
+        return [r.left - box.left, r.top - box.top + 34] as const; // 定位點在頭頂上方，往下一點接到人身上
+      };
+      const next: typeof paths = [];
+      for (const l of lines) {
+        const a = at(l.from);
+        const b = at(l.to);
+        if (!a || !b) continue;
+        const [mx, my] = [(a[0] + b[0]) / 2, Math.min(a[1], b[1]) - 40 - Math.abs(a[0] - b[0]) * 0.12];
+        next.push({ id: l.id, d: `M${a[0]},${a[1]} Q${mx},${my} ${b[0]},${b[1]}`, title: l.title });
+      }
+      setPaths(next);
+    };
+    measure();
+    // 房間進場動畫跑完、視窗大小改變時重新量
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    el.addEventListener("animationend", measure);
+    el.addEventListener("transitionend", measure);
+    const t = setTimeout(measure, 900);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("animationend", measure);
+      el.removeEventListener("transitionend", measure);
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, stamp]); // stamp：有人換位子時也重新量
+  // svg 一直留著（沒有線時是空的），才量得到外框
+  return (
+    <svg ref={own} className="office-handoff-lines" aria-hidden>
+      {paths.map((p) => (
+        <g key={p.id}>
+          <title>{p.title ? L(`交接：${p.title}`, `Handoff: ${p.title}`) : L("交接", "Handoff")}</title>
+          <path d={p.d} className="office-handoff-shadow" />
+          <path d={p.d} className="office-handoff-line" />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+const time = (iso: string) => {
+  const t = new Date(Date.parse(iso) + 8 * 3600_000);
+  return `${t.getUTCMonth() + 1}/${t.getUTCDate()} ${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
+};
+
+/** 交接紀錄：誰交給誰、交了什麼、現在做到哪（7 天內，最新的在上面） */
+function HandoffList({ handoffs, sessions, projects, now }: { handoffs: Handoff[]; sessions: AgentSession[]; projects: ProjectRoom[]; now: number }) {
+  const L = useL();
+  const lang = useLang();
+  const [all, setAll] = useState(false);
+  if (!handoffs.length) return null;
+  const byId = new Map(sessions.map((s) => [s.session_id, s]));
+  const who = (s: AgentSession | undefined) => {
+    if (!s) return L("（已不在辦公室）", "(gone)");
+    const role = s.role ? (lang === "en" && isRole(s.role) ? ROLE_EN[s.role] : s.role) : L("待分配", "Unassigned");
+    const room = projects.find((p) => p.id === s.project_id)?.name ?? (s.folder || L("大廳", "Lobby"));
+    return (
+      <span className="office-ho-who">
+        <i className="office-dot" style={{ background: (s.role && ROLE_COLOR[s.role]) || "#94a3b8" }} aria-hidden />
+        {role}
+        <span className="muted">{room}</span>
+      </span>
+    );
+  };
+  const state = (to: AgentSession | undefined): [string, string] => {
+    if (!to) return ["pending", L("還沒開工", "Not started")];
+    const st = displayStatus(to, now);
+    if (st === "working") return ["working", L("進行中", "In progress")];
+    if (st === "waiting" || st === "permission") return ["waiting", L("等你", "Needs you")];
+    if (st === "idle") return ["idle", L("休息中", "Idle")];
+    return ["ended", L("結束", "Done")];
+  };
+  const list = all ? handoffs : handoffs.slice(0, 6);
+  return (
+    <section className="glass office-list office-handoffs" aria-label={L("交接紀錄", "Handoffs")}>
+      <h2 className="office-list-title">
+        {L("交接紀錄", "Handoffs")}
+        <span className="muted">{L("7 天內", "last 7 days")}</span>
+      </h2>
+      <ul>
+        {list.map((h) => {
+          const [cls, label] = state(h.to ? byId.get(h.to) : undefined);
+          return (
+            <li key={h.id} className="office-ho-row">
+              <span className="office-row-time muted">{time(h.created_at)}</span>
+              <span className="office-ho-pair">
+                {who(byId.get(h.from))}
+                <span className="office-ho-arrow" aria-label={L("交給", "to")}>→</span>
+                {h.to ? who(byId.get(h.to)) : <span className="muted">{L("新的工作階段", "New session")}</span>}
+              </span>
+              <span className="office-row-task">{h.title ?? ""}</span>
+              <span className={`office-row-status ${cls}`}>{label}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {handoffs.length > 6 && (
+        <button type="button" className="office-off-toggle muted small" onClick={() => setAll(!all)} aria-expanded={all}>
+          {all ? L("收起", "Show less") : L(`看全部 ${handoffs.length} 筆`, `Show all ${handoffs.length}`)}
+        </button>
       )}
     </section>
   );

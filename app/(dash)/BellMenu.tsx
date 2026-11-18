@@ -1,5 +1,7 @@
 "use client";
 
+import { useAccess } from "./AccessContext";
+
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -73,6 +75,7 @@ export function AccountMenu({ email, logout }: { email: string; logout: () => Pr
   const ref = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const L = useL();
+  const owner = useAccess().owner;
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
     if (!open) return;
@@ -97,9 +100,11 @@ export function AccountMenu({ email, logout }: { email: string; logout: () => Pr
         <div className="menu glass" role="menu">
           <p className="muted small">{email}</p>
           <LangSwitch compact />
-          <Link href="/settings" className="menu-item" role="menuitem" onClick={() => setOpen(false)}>
-            <IconSettings size={16} /> {L("設定", "Settings")}
-          </Link>
+          {owner && (
+            <Link href="/settings" className="menu-item" role="menuitem" onClick={() => setOpen(false)}>
+              <IconSettings size={16} /> {L("設定", "Settings")}
+            </Link>
+          )}
           <form action={logout}>
             <button type="submit" className="menu-item" role="menuitem">
               <IconLogout size={16} /> {L("登出", "Log out")}

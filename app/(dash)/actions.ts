@@ -560,7 +560,9 @@ export async function setLang(lang: "zh" | "en") {
 
 /** 網頁切換主題時順便記到資料庫，手機 App 下次讀資料就跟著換 */
 export async function saveUiTheme(theme: string, mode: string) {
-  await requireOwner();
+  // 合夥人切換主題不影響你的手機 App（網頁打開時會自動呼叫，不能導頁）
+  const { getViewer } = await import("@/lib/auth");
+  if (!(await getViewer())?.access.owner) return;
   const value = uiThemeValue(theme, mode);
   if (!value) return;
   await db().from("settings").upsert({ key: "ui_theme", value, updated_at: new Date().toISOString() });

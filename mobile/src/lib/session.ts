@@ -2,7 +2,8 @@
 import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
 
-export type Session = { server: string; token: string };
+/** tabs：這支手機看得到的分頁（合夥人的手機只有部分；舊的配對沒有＝全部） */
+export type Session = { server: string; token: string; tabs?: string[] };
 
 const KEY = "ideabox.session";
 let current: Session | null | undefined; // undefined = 還沒從鑰匙圈讀出來

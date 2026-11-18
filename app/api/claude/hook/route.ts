@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as HookPayload | null;
   if (!body) return NextResponse.json({ ok: false }, { status: 400 });
   try {
-    const later = await recordHook(body);
+    const later = await recordHook(body, req.headers.get("x-ideabox-host"));
     if (later) after(() => later().catch((err) => logError("office", err)));
     return NextResponse.json({ ok: true });
   } catch (err) {

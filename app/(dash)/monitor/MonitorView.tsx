@@ -10,6 +10,8 @@ import type { HealthReport } from "@/lib/healthLogic";
 import { addMonitorSite, removeMonitorSite, runHealthNow, runMonitorNow } from "../actions";
 import { ConfirmButton, SubmitButton } from "../ConfirmButton";
 import { useView } from "../Nav";
+import { useAccess } from "../AccessContext";
+import { BarRow, Kpi, KpiRow, SidePanel } from "../Insight";
 
 export type DailyRow = { product: Product; day: string; users: number | null; active7: number | null; new7: number | null; db_bytes: number | null };
 
@@ -35,6 +37,7 @@ export function MonitorView({
   const view = useView("all", ["all", ...all.map((p) => p.key)]);
   const router = useRouter();
   const L = useL();
+  const owner = useAccess().owner;
   // 停在這頁時每分鐘更新一次
   useEffect(() => {
     const t = setInterval(() => router.refresh(), 60_000);
@@ -46,10 +49,61 @@ export function MonitorView({
   const down = status.filter((s) => !s.ok).length;
   const lastCheck = status.reduce<string | null>((a, s) => (s.checked_at && (!a || s.checked_at > a) ? s.checked_at : a), null);
   const stale = !lastCheck || now - new Date(lastCheck).getTime() > STALE_MS;
+  // 最上面那排重點數字與右欄（電腦版）：只用現在有的資料（目前狀態、回應時間、每天的使用數字）
+  const timed = all
+    .flatMap((p) => p.services.map((sv) => ({ id: sv.id, name: `${p.label}・${L(sv.zh, sv.en)}`, row: byService.get(sv.id) })))
+    .filter((s): s is { id: string; name: string; row: StatusRow } => !!s.row && s.row.ok && s.row.latency_ms != null)
+    .sort((a, b) => a.row.latency_ms! - b.row.latency_ms!);
+  const avgMs = timed.length ? Math.round(timed.reduce((sum, s) => sum + s.row.latency_ms!, 0) / timed.length) : null;
+  const slowest = timed[timed.length - 1];
+  const latestOf = (key: string) => daily.filter((d) => d.product === key).at(-1);
+  const active7 = all.reduce((sum, p) => sum + (latestOf(p.key)?.active7 ?? 0), 0);
+  const new7 = all.reduce((sum, p) => sum + (latestOf(p.key)?.new7 ?? 0), 0);
+  const hasUsage = all.some((p) => latestOf(p.key)?.active7 != null);
+  const issues = health?.issues ?? [];
+  const checkButton = owner ? (
+    <form action={runMonitorNow}>
+      <SubmitButton label={L("立即檢查", "Check now")} pending={L("檢查中…", "Checking…")} className="btn primary" />
+    </form>
+  ) : null;
 
   return (
     <>
-      <div className="page-title with-action">
+      {/* 電腦版：重點數字卡；手機版照舊用下面的標題列 */}
+      <KpiRow label={L("重點數字", "Key numbers")}>
+        <Kpi
+          pop
+          tone={down ? "danger" : status.length ? "ok" : ""}
+          label={L("服務狀態", "Services")}
+          value={status.length ? `${status.length - down} / ${status.length}` : "—"}
+          hint={down ? L(`${down} 項服務異常`, `${down} down`) : status.length ? L("全部正常", "All up") : L("還沒有檢查紀錄", "No checks yet")}
+        />
+        <Kpi
+          label={L("平均回應時間", "Average response")}
+          value={avgMs != null ? <>{avgMs}<small className="kpi-unit"> {L("毫秒", "ms")}</small></> : "—"}
+          hint={slowest ? L(`最慢：${slowest.name} ${slowest.row.latency_ms} 毫秒`, `Slowest: ${slowest.name} ${slowest.row.latency_ms} ms`) : L("還沒有資料", "No data yet")}
+        />
+        <Kpi
+          label={L("7 天有在用的人", "Active in 7 days")}
+          value={hasUsage ? active7.toLocaleString("en-US") : "—"}
+          hint={hasUsage ? L(`全部產品加總・7 天新增 ${new7.toLocaleString("en-US")}`, `All products · ${new7.toLocaleString("en-US")} new in 7d`) : L("還沒有使用數字", "No usage numbers yet")}
+        />
+        {owner ? (
+          <Kpi
+            tone={issues.some((i) => i.level === "error") ? "danger" : issues.length ? "warn" : health ? "ok" : ""}
+            label={L("每週系統健康", "Weekly health")}
+            value={health ? (issues.length ? issues.length : L("正常", "OK")) : "—"}
+            hint={health ? (issues.length ? L("項要你看一下", "to look at") : L(`上次健檢 ${taipeiShort(health.at)}`, `Checked ${taipeiShort(health.at)}`)) : L("每週一早上 9 點自動檢查", "Runs every Monday 9 am")}
+          />
+        ) : (
+          <Kpi label={L("上次檢查", "Last check")} value={lastCheck ? taipeiShort(lastCheck) : "—"} hint={L("每 5 分鐘檢查一次", "Checked every 5 minutes")} />
+        )}
+      </KpiRow>
+      <div className="view-line d-only">
+        <span className="muted small">{lastCheck ? L(`上次檢查 ${taipeiShort(lastCheck)}・每 5 分鐘一次`, `Last check ${taipeiShort(lastCheck)} · every 5 min`) : L("還沒有檢查紀錄", "No checks yet")}</span>
+        <span className="push">{checkButton}</span>
+      </div>
+      <div className="page-title with-action m-only">
         <div>
           <h1>{L("監控", "Monitor")}</h1>
           <p className="muted">
@@ -57,14 +111,10 @@ export function MonitorView({
             {lastCheck ? L(`・上次檢查 ${taipeiShort(lastCheck)}`, `・last check ${taipeiShort(lastCheck)}`) : ""}
           </p>
         </div>
-        <div className="title-actions">
-          <form action={runMonitorNow}>
-            <SubmitButton label={L("立即檢查", "Check now")} pending={L("檢查中…", "Checking…")} className="btn primary" />
-          </form>
-        </div>
+        {checkButton && <div className="title-actions">{checkButton}</div>}
       </div>
       {msg && <p className="notice glass">{msg}</p>}
-      {stale && status.length > 0 && (
+      {owner && stale && status.length > 0 && (
         <p className="notice glass">
           {L(
             "超過 20 分鐘沒有自動檢查，5 分鐘排程可能沒在跑。請確認 ideabox 的 Supabase 已執行 migration-004-monitor.sql。",
@@ -73,7 +123,9 @@ export function MonitorView({
         </p>
       )}
 
-      {view === "all" && <HealthCard report={health} />}
+      <div className="page-split">
+      <div className="page-main">
+      {view === "all" && owner && <HealthCard report={health} />}
 
       <div className="monitor-grid stagger" key={view}>
         {products.map((p) => (
@@ -88,7 +140,32 @@ export function MonitorView({
         ))}
       </div>
 
-      {view === "all" && <SitesPanel projects={projects} empty={!all.length} />}
+      {view === "all" && owner && <SitesPanel projects={projects} empty={!all.length} />}
+      {!owner && !all.length && <p className="muted">{L("你的專案還沒有接上產品監控。", "None of your projects are monitored yet.")}</p>}
+      </div>
+      <aside className="page-aside d-only" aria-label={L("監控概況", "Monitor overview")}>
+        <SidePanel title={L("回應時間排行", "Response times")}>
+          {timed.length ? (
+            <>
+              <p className="muted small side-note">{L("越短越好，單位毫秒", "Shorter is better (ms)")}</p>
+              {timed.map((s) => <BarRow key={s.id} wide label={s.name} n={s.row.latency_ms!} max={slowest.row.latency_ms!} />)}
+            </>
+          ) : <p className="muted small">{L("還沒有資料", "No data yet")}</p>}
+        </SidePanel>
+        {down > 0 && (
+          <SidePanel className="nudge" title={L("現在異常", "Down right now")}>
+            {status.filter((s) => !s.ok).map((s) => (
+              <div className="side-row" key={s.service}>
+                <span className="grow">
+                  <span className="side-title">{all.flatMap((p) => p.services.map((sv) => ({ id: sv.id, name: `${p.label}・${L(sv.zh, sv.en)}` }))).find((x) => x.id === s.service)?.name ?? s.service}</span>
+                  <span className="muted small">{L(`中斷 ${durationText(now - new Date(s.changed_at).getTime())}`, `Down for ${durationText(now - new Date(s.changed_at).getTime(), "en")}`)}</span>
+                </span>
+              </div>
+            ))}
+          </SidePanel>
+        )}
+      </aside>
+      </div>
     </>
   );
 }
@@ -107,6 +184,7 @@ function ProductCard({
   now: number;
 }) {
   const L = useL();
+  const owner = useAccess().owner;
   const active = services.filter((s) => s.row);
   const anyDown = active.some((s) => !s.row!.ok);
   const latest = daily[daily.length - 1];
@@ -144,7 +222,7 @@ function ProductCard({
         ))}
       </ul>
 
-      {product.site ? (
+      {product.site && owner ? (
         <form action={removeMonitorSite} className="site-remove">
           <input type="hidden" name="id" value={product.site.id} />
           <span className="muted small">{product.site.url.replace(/^https?:\/\//, "")}</span>

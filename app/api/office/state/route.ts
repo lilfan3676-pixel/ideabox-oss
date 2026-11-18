@@ -9,6 +9,6 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   await requireOwner();
   const now = Date.now();
-  const { sessions } = await listOffice(now);
-  return NextResponse.json({ sessions, now }, { headers: { "Cache-Control": "no-store" } });
+  const { sessions, handoffs } = await listOffice(now);
+  return NextResponse.json({ sessions, handoffs, now }, { headers: { "Cache-Control": "no-store" } });
 }

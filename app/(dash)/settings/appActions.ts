@@ -18,10 +18,12 @@ async function serverUrl(): Promise<string> {
   return `${proto}://${host}`;
 }
 
-export async function createAppPairing(): Promise<PairResult> {
+/** memberId：替合夥人配對他的手機（只看得到他有權限的東西） */
+export async function createAppPairing(memberId?: string): Promise<PairResult> {
   await requireOwner();
   try {
-    const { code, expiresAt } = await createPairCode();
+    const member = memberId && /^[0-9a-f-]{36}$/i.test(memberId) ? memberId : null;
+    const { code, expiresAt } = await createPairCode(Date.now(), member);
     const server = await serverUrl();
     // App 掃到（或 iPhone 相機掃到）就會打開 ideabox App 完成配對
     const link = `ideabox://pair?server=${encodeURIComponent(server)}&code=${code}`;

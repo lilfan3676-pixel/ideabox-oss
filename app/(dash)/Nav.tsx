@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useL } from "../LangProvider";
 import { LangSwitch } from "./LangSwitch";
 import { withViewTransition } from "./viewTransition";
 import { saveUiTheme } from "./actions";
 import { metaModules } from "@/lib/modules/meta";
+import { can, navHrefs, type Access } from "@/lib/accessLogic";
+import { useAccess } from "./AccessContext";
 import {
   IconAlert,
   IconArchive,
@@ -26,16 +28,20 @@ import {
   IconSparkle,
   IconSun,
   IconBulb,
+  IconUsers,
+  IconBox,
+  IconPercent,
+  IconSettings,
 } from "./icons";
 
-const CORE_PAGES: Array<{ href: string; label: string; short?: string; hideSm?: boolean }> = [
-  { href: "/", label: "點子庫", short: "點子" },
-  { href: "/projects", label: "專案" },
-  { href: "/office", label: "辦公室" },
-  { href: "/grants", label: "補助雷達", short: "補助" },
-  { href: "/monitor", label: "監控" },
-  { href: "/costs", label: "成本" },
-  { href: "/settings", label: "設定", hideSm: true }, // 手機版放在頭像選單裡
+const CORE_PAGES: Array<{ href: string; label: string; short?: string; hideSm?: boolean; icon?: React.ReactNode }> = [
+  { href: "/", label: "點子庫", short: "點子", icon: <IconBulb /> },
+  { href: "/projects", label: "專案", icon: <IconClipboard /> },
+  { href: "/office", label: "辦公室", icon: <IconBox /> },
+  { href: "/grants", label: "補助雷達", short: "補助", icon: <IconSparkle /> },
+  { href: "/monitor", label: "監控", icon: <IconPulse /> },
+  { href: "/costs", label: "成本", icon: <IconPercent /> },
+  { href: "/settings", label: "設定", hideSm: true, icon: <IconSettings /> }, // 手機版放在頭像選單裡
 ];
 
 // 模組（lib/modules/meta.tsx）多出的頁面：排在指定頁面後面，沒指定就排在「設定」前面
@@ -43,7 +49,7 @@ const PAGES = (() => {
   const list = [...CORE_PAGES];
   for (const p of metaModules.flatMap((m) => m.pages ?? [])) {
     const at = p.after ? list.findIndex((x) => x.href === p.after) + 1 : list.length - 1;
-    list.splice(at > 0 ? at : list.length - 1, 0, { href: p.href, label: p.label, short: p.short, hideSm: p.hideSm });
+    list.splice(at > 0 ? at : list.length - 1, 0, { href: p.href, label: p.label, short: p.short, hideSm: p.hideSm, icon: p.icon });
   }
   return list;
 })();
@@ -59,7 +65,7 @@ const NAV_EN: Record<string, string> = {
   全部開放中: "All open", "30 天內截止": "Due in 30 days", 常態受理: "Rolling", "已截止／不適合": "Closed / not a fit",
   全部產品: "All products",
   總覽: "Overview", 訂閱: "Subscriptions", 一次性開銷: "One-time", "AI 用量": "AI usage",
-  產品描述: "Product", 專案描述: "Projects", 連線狀態: "Connections", 外觀: "Appearance", 週報: "Digest", "AI 學習": "AI learning", "手機 App": "Phone app",
+  產品描述: "Product", 專案描述: "Projects", 連線狀態: "Connections", 外觀: "Appearance", 週報: "Digest", "AI 學習": "AI learning", "手機 App": "Phone app", 合夥人: "Partners",
   // 模組提供的英文
   ...Object.fromEntries(
     metaModules.flatMap((m) => [
@@ -79,7 +85,13 @@ function currentPage(pathname: string) {
   return hit?.href ?? "/";
 }
 
-/** 分頁在上方膠囊的順序（換頁動畫依此決定往左或往右滑） */
+/** 合夥人只看得到有權限的頁面（主人全部） */
+function visiblePages(a: Access) {
+  const allowed = navHrefs(a);
+  return allowed ? PAGES.filter((p) => allowed.includes(p.href)) : PAGES;
+}
+
+/** 分頁在左側圖示列的順序（換頁動畫依此決定往左或往右滑） */
 export function pageIndex(pathname: string): number {
   return PAGES.findIndex((p) => p.href === currentPage(pathname));
 }
@@ -91,15 +103,23 @@ function usePendingValue(actual: string) {
   return [pending ?? actual, setPending] as const;
 }
 
-/** 上方膠囊：切換頁面 */
+/** 頂部列左邊的頁面名稱（左側圖示列只有圖示，這裡寫出現在在哪一頁） */
+export function PageName() {
+  const page = currentPage(usePathname());
+  const L = useL();
+  const p = PAGES.find((x) => x.href === page);
+  return <h1 className="page-name">{p ? navT(L, p.label) : ""}</h1>;
+}
+
+/** 左側圖示列：切換頁面（滑過去顯示名稱） */
 export function TopNav() {
   const actual = currentPage(usePathname());
   const [page, setPage] = usePendingValue(actual);
-  const ref = useRef<HTMLElement>(null);
   const L = useL();
   const router = useRouter();
+  const PAGES = visiblePages(useAccess());
 
-  // 鍵盤左右鍵切換上方分頁（正在打字、按著修飾鍵、或有彈出視窗時不作用）
+  // 鍵盤左右鍵切換頁面（正在打字、按著修飾鍵、或有彈出視窗時不作用）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
@@ -116,55 +136,21 @@ export function TopNav() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [page, router, setPage]);
-  // 選中底色是一塊會滑動的指示器，位置跟著目前的分頁
-  const [ind, setInd] = useState<{ x: number; y: number; w: number; h: number; ready: boolean } | null>(null);
-  useEffect(() => {
-    const nav = ref.current;
-    if (!nav) return;
-    const measure = () => {
-      const a = nav.querySelector<HTMLElement>("a.active");
-      if (!a || !a.offsetWidth) return setInd(null);
-      setInd((prev) => ({ x: a.offsetLeft, y: a.offsetTop, w: a.offsetWidth, h: a.offsetHeight, ready: prev !== null }));
-    };
-    measure();
-    // 手機上分頁比較多會左右捲動：讓目前的分頁保持在畫面內
-    const a = nav.querySelector<HTMLElement>("a.active");
-    if (a && nav.scrollWidth > nav.clientWidth) {
-      nav.scrollTo({ left: a.offsetLeft - (nav.clientWidth - a.offsetWidth) / 2, behavior: ind ? "smooth" : "auto" });
-    }
-    // 視窗大小或字體載入改變寬度時重新量
-    const ro = new ResizeObserver(measure);
-    ro.observe(nav);
-    return () => ro.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, L]);
+  }, [page, router, setPage, PAGES]);
   return (
-    <nav className={`pill-nav ${ind ? "has-indicator" : ""}`} aria-label={L("主要頁面", "Main pages")} ref={ref}>
-      {ind && (
-        <span
-          className={`pill-indicator ${ind.ready ? "ready" : ""}`}
-          aria-hidden
-          style={{ "--x": `${ind.x}px`, top: ind.y, width: ind.w, height: ind.h } as React.CSSProperties}
-        />
-      )}
+    <nav className="rail-group page-nav" aria-label={L("主要頁面", "Main pages")}>
       {PAGES.map((p) => (
         <Link
           key={p.href}
           href={p.href}
           prefetch={true}
-          className={`${p.href === page ? "active" : ""} ${p.hideSm ? "hide-sm" : ""}`}
+          className={`rail-btn ${p.href === page ? "active" : ""}`}
+          aria-label={navT(L, p.label)}
           aria-current={p.href === actual ? "page" : undefined}
+          data-tip={navT(L, p.label)}
           onClick={() => setPage(p.href)}
         >
-          {p.short ? (
-            <>
-              <span className="label-full">{navT(L, p.label)}</span>
-              <span className="label-short">{navT(L, p.short)}</span>
-            </>
-          ) : (
-            navT(L, p.label)
-          )}
+          {p.icon ?? <IconGrid />}
         </Link>
       ))}
     </nav>
@@ -228,6 +214,7 @@ const CORE_RAIL: Record<string, { def: string; items: RailItem[] }> = {
       { key: "digest", label: "週報", icon: <IconMail /> },
       { key: "learn", label: "AI 學習", icon: <IconBulb /> },
       { key: "app", label: "手機 App", icon: <IconPhone /> },
+      { key: "partners", label: "合夥人", icon: <IconUsers /> },
     ],
   },
 };
@@ -243,15 +230,26 @@ const RAIL: Record<string, { def: string; items: RailItem[] }> = (() => {
   return out;
 })();
 
-/** 左側圖示列：頁面內的檢視（手機版變成底部懸浮膠囊）。
+/** 頂部列的檢視切換：頁面內的檢視（手機版是上方可左右滑的小分段）。
  *  在同一頁切換檢視時只改網址、不向伺服器重新要資料，畫面瞬間切換。 */
-export type RailProject = { slug: string; name: string; color: string };
+export type RailProject = { id?: string; slug: string; name: string; color: string };
+
+/** 合夥人在專案頁只看得到有權限的檢視（卡片／月曆） */
+function railFor(page: string, a: Access) {
+  const rail = RAIL[page] ?? { def: "all", items: [] };
+  if (a.owner || page === "/grants") return rail;
+  // 點子庫：合夥人看的是簡單清單，沒有檢視可切；監控：只看「全部」（他看不到其他產品）
+  if (page === "/") return { def: "all", items: [] };
+  if (page !== "/projects") return { def: "all", items: rail.items.filter((it) => it.key === "all") };
+  const items = rail.items.filter((it) => (it.key === "calendar" ? can(a, "calendar") : can(a, "projects")));
+  return { def: items.some((it) => it.key === rail.def) ? rail.def : items[0]?.key ?? rail.def, items };
+}
 
 export function SideRail({ children, projects = [] }: { children?: React.ReactNode; projects?: RailProject[] }) {
   const pathname = usePathname();
   const sp = useSearchParams();
   const page = currentPage(pathname);
-  const rail = RAIL[page] ?? { def: "all", items: [] };
+  const rail = railFor(page, useAccess());
   const L = useL();
   const onBase = pathname === page; // 例如在 /design/brief 時就不是
   const view = !onBase && pathname.startsWith("/design/brief") ? "brief" : !onBase ? "" : (sp.get("view") ?? rail.def);
@@ -319,7 +317,7 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
   );
 }
 
-/** 頁面內容讀取目前檢視（跟左側圖示列同步） */
+/** 頁面內容讀取目前檢視（跟頂部列的檢視切換同步） */
 export function useView(def: string, allowed: readonly string[]): string {
   const sp = useSearchParams();
   const v = sp.get("view") ?? def;
@@ -394,7 +392,7 @@ function useThemeState() {
   return { theme, mode, applyTheme, applyMode };
 }
 
-/** 淺色／深色切換（圖示列下方） */
+/** 淺色／深色切換（左側圖示列下方） */
 export function ModeToggle() {
   const { mode, applyMode } = useThemeState();
   const L = useL();
