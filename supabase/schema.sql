@@ -89,6 +89,29 @@ alter table public.project_milestones enable row level security;
 alter table public.project_logs enable row level security;
 alter table public.project_events enable row level security;
 
+-- 發文排程器：每個專案的社群貼文（時間到用 Telegram 提醒，自己貼上去）
+create table if not exists public.project_posts (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects (id) on delete cascade,
+  platform text not null default 'fb_group' check (platform in ('fb_group', 'fb_page', 'ig', 'dcard', 'line_oa')),
+  target text not null default '',        -- 發在哪裡：社團名稱或連結
+  due_at timestamptz not null,            -- 預定發文時間
+  topic text not null default '',         -- 主題（給 AI 寫草稿用，也當清單上的標題）
+  body text not null default '',          -- 文案
+  image_path text,                        -- 圖片（存在 Storage 的 idea-images，跟點子的圖片同一個地方）
+  status text not null default 'draft' check (status in ('draft', 'scheduled', 'posted', 'skipped')),
+  notified_at timestamptz,                -- 時間到、已經用 Telegram 提醒過
+  posted_at timestamptz,
+  source text not null default 'manual' check (source in ('manual', 'telegram', 'seed')),
+  seed_key text unique,                   -- 預先放入的排程用，重複執行不會多一份
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists project_posts_project_idx on public.project_posts (project_id, due_at);
+create index if not exists project_posts_due_idx on public.project_posts (due_at) where status = 'scheduled' and notified_at is null;
+
+alter table public.project_posts enable row level security;
+
 -- ========== 點子庫 ==========
 -- 資料夾（只有一層）。category 有值的是預設資料夾，AI 猜不到時用分類對應
 create table if not exists public.folders (

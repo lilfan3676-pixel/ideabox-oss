@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requirePage } from "@/lib/auth";
-import { can, seesProject } from "@/lib/accessLogic";
+import { can, editsProject, seesProject } from "@/lib/accessLogic";
 import { taipeiDate } from "@/lib/dates";
 import { db, type Idea } from "@/lib/db";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
@@ -8,17 +8,22 @@ import { listOffice } from "@/lib/office";
 import { listProjects, type Milestone, type ProjectLog } from "@/lib/projects";
 import { productForSlug } from "@/lib/monitorLogic";
 import { monitorProducts } from "@/lib/monitor";
-import { modules } from "@/lib/modules/registry";
+import { modules, projectTabs } from "@/lib/modules/registry";
+import { signedUrls } from "@/lib/images";
+import { draftEnabled, listPosts } from "@/lib/posts";
 import { listRadarReports, radarEnabled } from "@/lib/radar";
 import { ProjectDetail, type ProductData } from "./ProjectDetail";
+import { ProjectTabs, type TabDef } from "./ProjectTabs";
+import { PostsTab } from "./PostsTab";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 「現在抓一次」話題雷達在背景跑
 
 // 單一專案的詳細頁：階段歷程、里程碑、這個專案的點子、產品數據（有接監控的）、辦公室裡的人、完整日誌
-export default async function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ProjectPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { access } = await requirePage("projects");
   const { slug } = await params;
+  const { tab } = await searchParams;
   const { projects } = await listProjects();
   const index = projects.findIndex((p) => p.slug === decodeURIComponent(slug).toLowerCase());
   const project = projects[index];
@@ -42,7 +47,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     return null;
   };
 
-  const [{ data: ms }, { data: logs }, ideasRes, { data: daily }, { data: services }, office, feedback, radar] = await Promise.all([
+  const [{ data: ms }, { data: logs }, ideasRes, { data: daily }, { data: services }, office, feedback, radar, postList] = await Promise.all([
     db().from("project_milestones").select("*").eq("project_id", project.id).order("due", { ascending: true }),
     db().from("project_logs").select("*").eq("project_id", project.id).order("at", { ascending: false }).limit(500),
     // 還沒執行 migration-013 時沒有 project_id 欄位，當作沒有點子
@@ -52,7 +57,24 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     owner ? listOffice(now) : { sessions: [], ready: false },
     feedbackOf(),
     can(access, "radar") ? listRadarReports(project.id) : { reports: [], ready: false },
+    listPosts(project.id),
   ]);
+
+  // 分頁：總覽（原本的內容）、發文排程
+  const tabDefs: TabDef[] = [
+    { key: "", label: ["總覽", "Overview"] },
+    { key: "posts", label: ["發文排程", "Posts"], count: postList.posts.filter((x) => x.status === "draft" || x.status === "scheduled").length },
+  ];
+  // 模組加的分頁（例如某個專案專用的名單）
+  const canEdit = editsProject(access, project.id);
+  const extra = await projectTabs({ project, access, canEdit, today: taipeiDate() });
+  for (const t of extra) tabDefs.push({ key: t.key, label: t.label, count: t.count });
+  const active = tabDefs.some((t) => t.key === tab) ? tab! : "";
+  let panel: React.ReactNode = extra.find((t) => t.key === active) ? await extra.find((t) => t.key === active)!.render() : undefined;
+  if (active === "posts") {
+    const images = await signedUrls(postList.posts.map((x) => x.image_path ?? "").filter(Boolean), 3600);
+    panel = <PostsTab projectId={project.id} posts={postList.posts} ready={postList.ready} images={images} canEdit={canEdit} aiEnabled={draftEnabled()} today={taipeiDate()} now={now} />;
+  }
 
   const product: ProductData = {
     info,
@@ -76,6 +98,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
       radar={{ reports: radar.reports, ready: radar.ready && "radar_keywords" in project, enabled: radarEnabled() }}
       today={taipeiDate()}
       now={now}
+      tabs={<ProjectTabs slug={project.slug} tabs={tabDefs} active={active} />}
+      panel={panel}
     />
   );
 }

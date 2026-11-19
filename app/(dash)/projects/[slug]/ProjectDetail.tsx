@@ -38,6 +38,8 @@ export function ProjectDetail({
   radar,
   today,
   now,
+  tabs,
+  panel,
 }: {
   project: Project;
   color: string;
@@ -52,6 +54,8 @@ export function ProjectDetail({
   radar: { reports: RadarReport[]; ready: boolean; enabled: boolean };
   today: string;
   now: number;
+  tabs?: React.ReactNode; // 分頁列（總覽／發文排程…）
+  panel?: React.ReactNode; // 不是「總覽」分頁時，標題下面改放這個
 }) {
   const L = useL();
   const segments = useMemo(() => stageSegments(p, logs, now), [p, logs, now]);
@@ -94,7 +98,10 @@ export function ProjectDetail({
         </div>
       </div>
       <div className="m-only"><ProjectLinks links={p.links} size={18} /></div>
+      {tabs}
 
+      {panel ?? (
+      <>
       <KpiRow label={L("重點數字", "Key numbers")}>
         {users !== null ? (
           <Kpi pop label={L(...m.users)} value={users.toLocaleString()} hint={lastDaily?.new7 != null ? L(`這 7 天 +${lastDaily.new7}`, `+${lastDaily.new7} in 7 days`) : L("最近 90 天", "Last 90 days")} data={usersSeries} />
@@ -196,6 +203,8 @@ export function ProjectDetail({
           )}
         </aside>
       </div>
+      </>
+      )}
     </div>
   );
 }

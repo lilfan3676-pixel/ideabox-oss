@@ -84,7 +84,8 @@ export async function runProjectTick(now = Date.now()): Promise<{ sent: boolean;
   const { data } = await db().from("project_milestones").select("*").eq("done", false);
   const milestones = (data ?? []) as Milestone[];
   const today = taipeiDate(new Date(now));
-  const d = buildDigest(projects, milestones, today, now, env.appUrl());
+  const { morningLines } = await import("./modules/registry");
+  const d = buildDigest(projects, milestones, today, now, env.appUrl(), await morningLines({ now, today }));
   const msgId = await sendToOwner(d.html);
   // 有傳出去才標記，傳失敗明天會再提醒
   if (msgId) {
@@ -135,6 +136,8 @@ export async function handleProjectText(text: string): Promise<string | null> {
       const when = (cmd.start === cmd.end ? cmd.start.slice(5).replace("-", "/") : `${cmd.start.slice(5).replace("-", "/")}～${cmd.end.slice(5).replace("-", "/")}`) + (cmd.time ? ` ${cmd.time}` : "");
       return id ? `🗓 ${esc(p.name)} 新增排程：${esc(cmd.value)}（${when}），在專案頁的月曆上看得到${cmd.time ? "；開始前 30 分鐘推送到手機 App" : ""}` : `ℹ️ ${esc(p.name)} 已經有這個排程了`;
     }
+    case "post":
+      return (await import("./posts")).addPostFromTelegram(p, cmd.value);
     case "milestone":
       await addMilestone(p.id, cmd.value, cmd.due, "telegram");
       return `📅 ${esc(p.name)} 新增里程碑：${esc(cmd.value)}（${cmd.due}），前 7 天和前 1 天會提醒你`;

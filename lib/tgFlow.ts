@@ -282,6 +282,16 @@ export async function handleCallback(cb: TgCallback) {
     return;
   }
 
+  // 發文提醒：已發／延後 1 天／略過
+  if (data.startsWith("po:")) {
+    const { handlePostButton } = await import("./posts");
+    const r = await handlePostButton(data);
+    await answerCallback(cb.id, r.toast || undefined);
+    if (r.done) await setButtons(chatId, msgId, null);
+    if (r.text) await sendMessage(chatId, r.text, { replyTo: msgId });
+    return;
+  }
+
   await answerCallback(cb.id);
 }
 

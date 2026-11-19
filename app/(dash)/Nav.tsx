@@ -81,6 +81,7 @@ export const ALL_PAGES: Array<[string, string, string]> = PAGES.map((p) => [p.hr
 
 function currentPage(pathname: string) {
   if (pathname.startsWith("/design")) return "/"; // 設計庫已併進點子庫（/design/brief 簡報頁仍在）
+  if (pathname.startsWith("/account")) return "/account"; // 合夥人的「我的帳號」：不在選單裡
   const hit = PAGES.find((p) => p.href !== "/" && (pathname === p.href || pathname.startsWith(p.href + "/")));
   return hit?.href ?? "/";
 }
@@ -108,7 +109,7 @@ export function PageName() {
   const page = currentPage(usePathname());
   const L = useL();
   const p = PAGES.find((x) => x.href === page);
-  return <h1 className="page-name">{p ? navT(L, p.label) : ""}</h1>;
+  return <h1 className="page-name">{p ? navT(L, p.label) : page === "/account" ? L("我的帳號", "My account") : ""}</h1>;
 }
 
 /** 左側圖示列：切換頁面（滑過去顯示名稱） */

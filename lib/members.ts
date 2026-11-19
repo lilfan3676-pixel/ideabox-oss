@@ -115,3 +115,32 @@ async function findUserId(email: string): Promise<string | null> {
 export async function markMemberLogin(email: string): Promise<void> {
   await db().from("members").update({ last_login_at: new Date().toISOString() }).eq("email", email.toLowerCase());
 }
+
+// ---------- 合夥人自己的「我的帳號」 ----------
+
+/** 推送開關（合夥人自己或主人在合夥人頁都改同一個欄位） */
+export async function setMemberPush(id: string, push: boolean): Promise<void> {
+  const { error } = await db().from("members").update({ push }).eq("id", id);
+  if (error) throw error;
+}
+
+/** 解除自己的手機：只能刪掉屬於這個合夥人的那一支 */
+export async function removeMemberDevice(memberId: string, deviceId: string): Promise<void> {
+  await db().from("app_devices").delete().eq("id", deviceId).eq("member_id", memberId);
+}
+
+/** 改密碼：先用 verify 確認目前的密碼對，再改；verify 由呼叫端提供（實際是用 Supabase 登入試一次） */
+export async function changeMemberPassword(
+  m: Pick<Member, "email" | "user_id">,
+  current: string,
+  next: string,
+  verify: (email: string, password: string) => Promise<string | null>,
+): Promise<{ ok: true } | { ok: false; error: "weak" | "same" | "wrong" | "failed" }> {
+  if (next.length < MIN_PASSWORD) return { ok: false, error: "weak" };
+  if (next === current) return { ok: false, error: "same" };
+  if (!m.user_id) return { ok: false, error: "failed" };
+  const uid = await verify(m.email, current).catch(() => null);
+  if (!uid || uid !== m.user_id) return { ok: false, error: "wrong" };
+  const { error } = await db().auth.admin.updateUserById(m.user_id, { password: next });
+  return error ? { ok: false, error: "failed" } : { ok: true };
+}

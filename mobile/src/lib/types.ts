@@ -31,5 +31,11 @@ export type OfficeData = { ready: boolean; now: number; projects: { id: string }
 // 監控分頁（/api/app/monitor）
 export type MonitorService = { id: string; name: string; checked: boolean; ok: boolean | null; since: string | null; latency_ms: number | null; error: string | null };
 export type MonitorDay = { day: string; users: number | null; active7: number | null; new7: number | null; db_bytes: number | null };
-export type MonitorProductData = { key: string; label: string; services: MonitorService[]; metrics: { users: string; active7: string; new7: string } | null; db_limit: number | null; db_label: string | null; hint: string | null; daily: MonitorDay[] };
+export type Breakdown = {
+  title: string;
+  note?: string;
+  error?: string;
+  views: { label: string; total: number; parts: { label: string; n: number; pct: number; color: string }[]; table?: { cols: string[]; rows: { label: string; cells: number[] }[] } }[];
+};
+export type MonitorProductData = { key: string; label: string; services: MonitorService[]; metrics: { users: string; active7: string; new7: string } | null; db_limit: number | null; db_label: string | null; hint: string | null; daily: MonitorDay[]; /** 舊版伺服器沒有 */ breakdowns?: Breakdown[] };
 export type MonitorData = { ready: boolean; products: MonitorProductData[]; health: { at: string; issues: { level: "error" | "warn"; text: string }[]; days: number; errors: number; ai_usd_week: number } | null };

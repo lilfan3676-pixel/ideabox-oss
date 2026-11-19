@@ -90,6 +90,12 @@ export async function sendMessage(
   return lastId;
 }
 
+/** 傳一張圖片（給網址，Telegram 自己去抓）；失敗回傳 null */
+export async function sendPhoto(chatId: number | string, url: string, caption?: string): Promise<number | null> {
+  const r = await call<{ message_id: number }>("sendPhoto", { chat_id: chatId, photo: url, ...(caption ? { caption } : {}) });
+  return r?.message_id ?? null;
+}
+
 /** 傳給主人（TELEGRAM_OWNER_ID）。未設定時略過。 */
 export async function sendToOwner(html: string): Promise<number | null> {
   const owner = env.telegramOwnerId();

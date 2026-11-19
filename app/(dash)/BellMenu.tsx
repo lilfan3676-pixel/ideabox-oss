@@ -100,9 +100,13 @@ export function AccountMenu({ email, logout }: { email: string; logout: () => Pr
         <div className="menu glass" role="menu">
           <p className="muted small">{email}</p>
           <LangSwitch compact />
-          {owner && (
+          {owner ? (
             <Link href="/settings" className="menu-item" role="menuitem" onClick={() => setOpen(false)}>
               <IconSettings size={16} /> {L("設定", "Settings")}
+            </Link>
+          ) : (
+            <Link href="/account" className="menu-item" role="menuitem" onClick={() => setOpen(false)}>
+              <IconSettings size={16} /> {L("我的帳號", "My account")}
             </Link>
           )}
           <form action={logout}>

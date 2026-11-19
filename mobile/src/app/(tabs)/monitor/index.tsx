@@ -1,10 +1,11 @@
 // 監控：主角是「全部正常／N 項異常」大卡；每個產品一張卡（服務燈號、三個數字＋近 30 天趨勢、資料庫用量）；最後是每週健檢
-import { Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, Text, View } from "react-native";
 import { Hero, soft } from "@/components/blocks";
 import { Card, Dot, Empty, ErrorNote, Loading, Screen, Section } from "@/components/ui";
 import { ago } from "@/lib/format";
 import { useTheme, type Palette } from "@/lib/theme";
-import type { MonitorData, MonitorDay, MonitorProductData } from "@/lib/types";
+import type { Breakdown, MonitorData, MonitorDay, MonitorProductData } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 
 function bytes(b: number) {
@@ -94,7 +95,71 @@ function ProductCard({ p, t }: { p: MonitorProductData; t: Palette }) {
       {/* 資料庫用量 */}
       {p.db_limit && latest?.db_bytes != null ? <DbBar t={t} used={latest.db_bytes} limit={p.db_limit} label={p.db_label ?? "資料庫用量"} /> : null}
       {p.hint ? <Text style={{ fontSize: 13, color: t.muted, lineHeight: 18 }}>{p.hint}</Text> : null}
+
+      {/* 分組統計（例如使用者男女比例），只有主人收得到 */}
+      {(p.breakdowns ?? []).map((b) => <BreakdownView key={b.title} b={b} t={t} />)}
     </Card>
+  );
+}
+
+function BreakdownView({ b, t }: { b: Breakdown; t: Palette }) {
+  const [i, setI] = useState(0);
+  const v = b.views[Math.min(i, b.views.length - 1)];
+  return (
+    <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: t.sep, paddingTop: 12 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: t.text }}>{b.title}</Text>
+        {b.views.length > 1 ? (
+          <View style={{ flexDirection: "row", backgroundColor: t.accentSoft, borderRadius: 9, padding: 2 }} accessibilityRole="tablist">
+            {b.views.map((x, n) => {
+              const on = n === i;
+              return (
+                <Pressable key={x.label} onPress={() => setI(n)} accessibilityRole="tab" accessibilityState={{ selected: on }} hitSlop={6} style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 7, backgroundColor: on ? t.card : "transparent" }}>
+                  <Text style={{ fontSize: 13, fontWeight: on ? "700" : "500", color: on ? t.text : t.muted }}>{x.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
+      {b.error || !v ? (
+        <Text style={{ fontSize: 13, color: t.muted }}>{b.error ?? "沒有資料"}</Text>
+      ) : (
+        <>
+          <View style={{ flexDirection: "row", height: 10, borderRadius: 5, overflow: "hidden", backgroundColor: t.accentSoft }} accessible={false}>
+            {v.parts.map((x) => (x.n && v.total ? <View key={x.label} style={{ width: `${(x.n / v.total) * 100}%`, backgroundColor: x.color }} /> : null))}
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", columnGap: 14, rowGap: 4 }}>
+            {v.parts.map((x) => (
+              <View key={x.label} style={{ flexDirection: "row", alignItems: "center", gap: 5 }} accessible accessibilityLabel={`${x.label} ${x.n} 人，${x.pct}%`}>
+                <Dot color={x.color} size={8} />
+                <Text style={{ fontSize: 13, color: t.text }}>
+                  {x.label} <Text style={{ fontSize: 15, fontWeight: "800" }}>{x.n}</Text> <Text style={{ color: t.muted }}>{x.pct}%</Text>
+                </Text>
+              </View>
+            ))}
+          </View>
+          {v.table ? (
+            <View>
+              <View style={{ flexDirection: "row", paddingVertical: 5 }}>
+                {v.table.cols.map((c, n) => (
+                  <Text key={c} style={{ flex: n === 0 ? 1.4 : 1, textAlign: n === 0 ? "left" : "right", fontSize: 13, color: t.muted }}>{c}</Text>
+                ))}
+              </View>
+              {v.table.rows.map((r) => (
+                <View key={r.label} style={{ flexDirection: "row", paddingVertical: 6, borderTopWidth: 1, borderTopColor: t.sep }} accessible accessibilityLabel={`${r.label}：${v.table!.cols.slice(1).map((c, n) => `${c} ${r.cells[n]}`).join("、")}`}>
+                  <Text style={{ flex: 1.4, fontSize: 14, fontWeight: "600", color: t.text }}>{r.label}</Text>
+                  {r.cells.map((c, n) => (
+                    <Text key={n} style={{ flex: 1, textAlign: "right", fontSize: 14, color: c ? t.text : t.faint, fontVariant: ["tabular-nums"] }}>{c}</Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {b.note ? <Text style={{ fontSize: 12, color: t.muted, lineHeight: 17 }}>{b.note}</Text> : null}
+        </>
+      )}
+    </View>
   );
 }
 

@@ -1,5 +1,6 @@
 // 專案管理規則（純函式，前後端共用、方便測試）
 import { parseTime } from "./appTime";
+import { parsePostCommand, type PostCommand } from "./postLogic";
 import { daysBetween, isIsoDate } from "./dates";
 
 export type ProjectStatus = "active" | "paused" | "done";
@@ -184,10 +185,12 @@ export type ProjectCommand =
   | { project: Project; action: "log"; value: string }
   | { project: Project; action: "milestone"; value: string; due: string }
   | { project: Project; action: "event"; value: string; start: string; end: string; time: string | null }
+  | { project: Project; action: "post"; value: PostCommand }
   | { project: Project; action: "error"; value: string };
 
-const ACTIONS: Record<string, "next" | "stage" | "advance" | "log" | "milestone" | "event"> = {
+const ACTIONS: Record<string, "next" | "stage" | "advance" | "log" | "milestone" | "event" | "post"> = {
   排程: "event",
+  發文: "post",
   下一步: "next",
   階段: "stage",
   下一階段: "advance",
@@ -204,7 +207,7 @@ const ACTIONS: Record<string, "next" | "stage" | "advance" | "log" | "milestone"
  */
 export function parseProjectCommand(text: string, projects: Project[], today: string): ProjectCommand | null {
   // 指令後面要接空白、冒號或直接結束：「app 下一階段很重要的功能」是點子，不是指令
-  const m = text.trim().match(/^(\S+)\s+(下一步|進下一階段|下一階段|階段|記錄|紀錄|日誌|里程碑|排程)(?:[\s：:]+([\s\S]*))?$/);
+  const m = text.trim().match(/^(\S+)\s+(下一步|進下一階段|下一階段|階段|記錄|紀錄|日誌|里程碑|排程|發文)(?:[\s：:]+([\s\S]*))?$/);
   if (!m) return null;
   const key = m[1].toLowerCase();
   const project = projects.find((p) => p.slug === key || p.name.toLowerCase() === key);
@@ -228,6 +231,11 @@ export function parseProjectCommand(text: string, projects: Project[], today: st
     if (!mm || !due) return { project, action: "error", value: "格式：里程碑 12/1 正式上架" };
     return { project, action: "milestone", value: mm[2].trim().slice(0, 80), due };
   }
+  if (action === "post") {
+    const cmd = parsePostCommand(rest, today);
+    if (!cmd) return { project, action: "error", value: "格式：發文 11/21 20:00 中山社團 常見問題整理（時間可以不寫，預設 20:00）" };
+    return { project, action: "post", value: cmd };
+  }
   if (action === "event") {
     const mm = rest.match(/^(\S+(?:\s*(?:-|－|~|～|〜|到|至)\s*\S+)?)\s+([\s\S]+)$/);
     const r = mm ? parseRange(mm[1], today) : null;
@@ -249,7 +257,7 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 export type Digest = { html: string; remind7: string[]; remind1: string[]; staleAsked: string[] };
 
 /** 早上 8 點的訊息：各專案做到哪、下一步、快到的里程碑、久沒動的專案 */
-export function buildDigest(projects: Project[], milestones: Milestone[], today: string, now: number, appUrl?: string | null): Digest {
+export function buildDigest(projects: Project[], milestones: Milestone[], today: string, now: number, appUrl?: string | null, extra: string[] = []): Digest {
   const remind7: string[] = [];
   const remind1: string[] = [];
   const staleAsked: string[] = [];
@@ -291,6 +299,9 @@ export function buildDigest(projects: Project[], milestones: Milestone[], today:
       lines.push(`・${esc(p.name)} 已經 ${daysIdle(p, now)} 天沒更新（不做了可以在專案頁按「暫停」）`);
     }
   }
+
+  // 模組多放的幾行（例如產品的成長數字）
+  for (const x of extra) lines.push("", x);
 
   const ex = esc(active[0]?.slug ?? projects[0]?.slug ?? "短名");
   lines.push("", `更新方式：回我「${ex} 下一步 ＿＿」「${ex} 下一階段」「${ex} 記錄 ＿＿」`);

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { PRIVATE_DEFAULTS, PRIVATE_UNIQUE } from "./fakeDbPrivate";
 
 type Row = Record<string, any>;
-export const tables: Record<string, Row[]> = { ideas: [], grants: [], settings: [], monitor_status: [], monitor_daily: [], expenses: [], ai_usage: [], sys_events: [], feedback_signals: [], learned_rules: [], folders: [], projects: [], project_milestones: [], project_logs: [], agent_sessions: [], agent_handoffs: [], project_events: [], radar_reports: [], app_devices: [], members: [] };
+export const tables: Record<string, Row[]> = { ideas: [], grants: [], settings: [], monitor_status: [], monitor_daily: [], expenses: [], ai_usage: [], sys_events: [], feedback_signals: [], learned_rules: [], folders: [], projects: [], project_milestones: [], project_logs: [], agent_sessions: [], agent_handoffs: [], project_events: [], radar_reports: [], app_devices: [], members: [], project_posts: [] };
 for (const k of Object.keys(PRIVATE_UNIQUE)) tables[k] = [];
 
 export const MAX_ROWS = 1000;
@@ -28,6 +28,7 @@ const DEFAULTS: Record<string, () => Row> = {
   app_devices: () => ({ id: randomUUID(), name: "手機", push_token: null, created_at: new Date().toISOString(), last_seen_at: new Date().toISOString() }),
   members: () => ({ id: randomUUID(), project_ids: [], pages: [], can_edit: false, push: true, active: true, user_id: null, invite_hash: null, invite_exp: null, last_login_at: null, created_at: new Date().toISOString() }),
   radar_reports: () => ({ id: randomUUID(), status: "running", keywords: [], post_count: 0, summary: null, idea_ids: [], error: null, finished_at: null, created_at: new Date().toISOString() }),
+  project_posts: () => ({ id: randomUUID(), platform: "fb_group", target: "", topic: "", body: "", image_path: null, status: "draft", notified_at: null, posted_at: null, source: "manual", created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
   project_milestones: () => ({ id: randomUUID(), done: false, reminded_7: false, reminded_1: false, created_at: new Date().toISOString() }),
   project_logs: () => ({ id: ++seq, at: new Date().toISOString(), source: "manual" }),
   monitor_status: () => ({}),
@@ -39,7 +40,7 @@ const DEFAULTS: Record<string, () => Row> = {
   learned_rules: () => ({ id: ++seq, evidence: 1, active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
   ...PRIVATE_DEFAULTS,
 };
-const UNIQUE: Record<string, string[]> = { ideas: ["post_key"], grants: ["dedupe_key"], settings: ["key"], monitor_status: ["service"], monitor_daily: ["product+day"], expenses: ["id"], ai_usage: [], sys_events: [], feedback_signals: [], learned_rules: [], folders: [], projects: ["slug"], project_milestones: [], project_logs: [], agent_sessions: ["session_id"], agent_handoffs: ["from_session+to_host"], project_events: [], radar_reports: [], app_devices: ["token_hash"], members: ["email"], ...PRIVATE_UNIQUE };
+const UNIQUE: Record<string, string[]> = { ideas: ["post_key"], grants: ["dedupe_key"], settings: ["key"], monitor_status: ["service"], monitor_daily: ["product+day"], expenses: ["id"], ai_usage: [], sys_events: [], feedback_signals: [], learned_rules: [], folders: [], projects: ["slug"], project_milestones: [], project_logs: [], agent_sessions: ["session_id"], agent_handoffs: ["from_session+to_host"], project_events: [], radar_reports: [], app_devices: ["token_hash"], members: ["email"], project_posts: [], ...PRIVATE_UNIQUE };
 // 「a+b」代表複合唯一鍵
 // 複合鍵有任一欄是 null 時不算重複（跟 Postgres 一樣）
 const keyOf = (r: Row, u: string) => {

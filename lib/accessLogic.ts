@@ -1,7 +1,9 @@
 // 合夥人權限（純邏輯，瀏覽器、伺服器、測試都能用）
 // 主人看得到全部；合夥人只看得到勾選的「畫面」與「專案」。成本、設定、辦公室與私人模組永遠只有主人看得到。
 
-export const MEMBER_PAGES = [
+import { MODULE_MEMBER_PAGES } from "./modules/memberPages";
+
+const CORE_MEMBER_PAGES = [
   { key: "projects", zh: "專案（卡片＋詳細頁）", en: "Projects (cards + detail)" },
   { key: "calendar", zh: "月曆／時程表", en: "Calendar / timeline" },
   { key: "monitor", zh: "產品監控", en: "Product monitor" },
@@ -10,7 +12,10 @@ export const MEMBER_PAGES = [
   { key: "grants", zh: "補助雷達", en: "Grants" },
 ] as const;
 
-export type PageKey = (typeof MEMBER_PAGES)[number]["key"];
+/** 可以勾給合夥人的畫面：核心的＋模組自己的頁面（lib/modules/memberPages.ts） */
+export const MEMBER_PAGES: readonly { key: PageKey; zh: string; en: string }[] = [...CORE_MEMBER_PAGES, ...MODULE_MEMBER_PAGES];
+
+export type PageKey = (typeof CORE_MEMBER_PAGES)[number]["key"] | (typeof MODULE_MEMBER_PAGES)[number]["key"];
 const PAGE_KEYS = MEMBER_PAGES.map((p) => p.key) as readonly string[];
 
 export type Member = {
@@ -63,6 +68,7 @@ export function navHrefs(a: Access): string[] | null {
   if (can(a, "projects") || can(a, "calendar")) out.push("/projects");
   if (can(a, "grants")) out.push("/grants");
   if (can(a, "monitor")) out.push("/monitor");
+  for (const p of MODULE_MEMBER_PAGES) if (can(a, p.key)) out.push(p.href);
   return out;
 }
 
@@ -74,6 +80,7 @@ export function homeHref(a: Access): string {
   if (can(a, "monitor")) return "/monitor";
   if (can(a, "ideas")) return "/";
   if (can(a, "grants")) return "/grants";
+  for (const p of MODULE_MEMBER_PAGES) if (can(a, p.key)) return p.href;
   return "/no-access";
 }
 

@@ -186,7 +186,7 @@ function MemberEditor({
           </label>
         ))}
       </div>
-      <p className="muted small">🔒 {L("成本、辦公室、設定和私人模組的頁面：永遠只有你看得到", "Costs, office, settings and private module pages are always yours only")}</p>
+      <p className="muted small">🔒 {L("成本、辦公室、設定，以及上面沒列出的頁面：永遠只有你看得到", "Costs, office, settings and any page not listed above are always yours only")}</p>
 
       <h4>{L("權限", "Permission")}</h4>
       <div className="seg" role="group" aria-label={L("權限", "Permission")}>

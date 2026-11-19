@@ -104,15 +104,15 @@ export function IdeasView({
     setFiltersState({ adopt: "", project: "", min: 0, cat: "" });
     for (const k of ["adopt", "project", "min", "cat"]) setParam(k, "");
   };
-  // 「已採用」那一區收起來與否，記在這台裝置
-  const [adoptedOpen, setAdoptedOpen] = useState(true);
+  // 「已採用」那一區預設收起來（平常不太看），展開與否記在這台裝置
+  const [adoptedOpen, setAdoptedOpen] = useState(false);
   useEffect(() => {
-    try { if (localStorage.getItem("ib-adopted-open") === "0") setAdoptedOpen(false); } catch {}
+    try { if (localStorage.getItem("ib-adopted-expanded") === "1") setAdoptedOpen(true); } catch {}
   }, []);
   const toggleAdoptedOpen = () => {
     const next = !adoptedOpen;
     setAdoptedOpen(next);
-    try { localStorage.setItem("ib-adopted-open", next ? "1" : "0"); } catch {}
+    try { localStorage.setItem("ib-adopted-expanded", next ? "1" : "0"); } catch {}
   };
   const [layout, setLayout] = useLayout("ib-layout-ideas");
   const [openId, setOpenId] = useState<string | null>(null);

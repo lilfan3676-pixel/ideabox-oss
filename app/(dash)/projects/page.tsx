@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { getL } from "@/lib/i18nServer";
 import { listProjects, recentLogs, type Milestone, type ProjectLog } from "@/lib/projects";
 import type { ProjectEvent } from "@/lib/projectLogic";
+import { listPosts } from "@/lib/posts";
+import type { Post } from "@/lib/postLogic";
 import { slackStatus } from "@/lib/slack";
 import { ProjectsView } from "./ProjectsView";
 import type { ActivityLog, StageLog } from "./Schedule";
@@ -22,15 +24,16 @@ export default async function ProjectsPage() {
   const mine = <T extends { project_id?: string | null }>(rows: T[] | null | undefined) => filterByProject(access, (rows ?? []) as T[]);
   const has013 = !ready || !projects.length || "slack_channel" in projects[0];
   const yearAgo = new Date(Date.now() - 366 * 86_400_000).toISOString();
-  const [{ data: ms }, logs, { data: stageLogs }, { data: activity }, eventsRes] = ready
+  const [{ data: ms }, logs, { data: stageLogs }, { data: activity }, eventsRes, postsRes] = ready
     ? await Promise.all([
         db().from("project_milestones").select("*").order("due", { ascending: true }),
         recentLogs(400),
         db().from("project_logs").select("project_id, at, text").like("text", "階段：%").order("at", { ascending: true }).limit(2000),
         db().from("project_logs").select("project_id, at").gte("at", yearAgo).limit(10000),
         db().from("project_events").select("*").gte("end_date", yearAgo.slice(0, 10)).order("start_date").limit(3000),
+        listPosts(), // 還沒執行 migration-028 時是空的
       ])
-    : [{ data: [] }, [], { data: [] }, { data: [] }, { data: [], error: true }];
+    : [{ data: [] }, [], { data: [] }, { data: [] }, { data: [], error: true }, { posts: [], ready: false }];
   return (
     <>
       {!ready && (
@@ -46,7 +49,7 @@ export default async function ProjectsPage() {
         <p className="muted small">{L("Slack 進度回報還沒連線（沒設定 SLACK_BOT_TOKEN）。連上後各專案貼到 #progress-短名 頻道的進度會自動更新到這裡。", "Slack progress isn’t connected yet (SLACK_BOT_TOKEN not set).")}</p>
       )}
       <Suspense>
-        <ProjectsView projects={projects} order={all.map((p) => p.id)} milestones={mine(ms as Milestone[])} logs={mine(logs as ProjectLog[])} stageLogs={mine(stageLogs as StageLog[])} activity={mine(activity as ActivityLog[])} events={mine(eventsRes.data as ProjectEvent[])} eventsReady={!eventsRes.error} today={taipeiDate()} now={Date.now()} />
+        <ProjectsView projects={projects} order={all.map((p) => p.id)} milestones={mine(ms as Milestone[])} logs={mine(logs as ProjectLog[])} stageLogs={mine(stageLogs as StageLog[])} activity={mine(activity as ActivityLog[])} events={mine(eventsRes.data as ProjectEvent[])} posts={mine(postsRes.posts as Post[])} eventsReady={!eventsRes.error} today={taipeiDate()} now={Date.now()} />
       </Suspense>
     </>
   );

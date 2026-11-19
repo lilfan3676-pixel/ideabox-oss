@@ -4,6 +4,8 @@
 
 import type { Issue, SysEvent } from "../healthLogic";
 import type { CheckResult } from "../monitorLogic";
+import type { Access } from "../accessLogic";
+import type { Project } from "../projectLogic";
 
 /** 監控裡的一個產品（純資料，會傳給瀏覽器畫面） */
 export type MonitorProduct = {
@@ -22,6 +24,23 @@ export type MonitorProduct = {
   setupHint?: [string, string] | null;
   /** 通用網址監控建立的（可以在畫面上刪除） */
   site?: { id: string; url: string };
+};
+
+/** 產品的分組統計（例如使用者的組成），手機 App 監控分頁在產品卡片裡顯示；只給主人看 */
+export type ProductBreakdown = {
+  product: string;
+  title: string;
+  note?: string;
+  /** 讀不到時的說明（有這個就不畫圖） */
+  error?: string;
+  /** 可切換的幾種算法，例如「已完成註冊／全部」 */
+  views: {
+    label: string;
+    total: number;
+    /** 比例條，color 是 #rrggbb */
+    parts: { label: string; n: number; pct: number; color: string }[];
+    table?: { cols: string[]; rows: { label: string; cells: number[] }[] };
+  }[];
 };
 
 export type MonitorStats = { users: number; active7: number; new7: number; db_bytes: number };
@@ -46,6 +65,9 @@ export type TgDestination = {
   undo?: (undo: unknown) => Promise<void>;
 };
 
+/** 模組加在專案詳細頁的分頁：key 是網址上的 ?tab=，render 只有切到這個分頁時才會呼叫 */
+export type ProjectTab = { key: string; label: [string, string]; count?: number; render: () => Promise<React.ReactNode> };
+
 export type BellDef = {
   key: string;
   label: [string, string];
@@ -59,8 +81,12 @@ export type ServerModule = {
   key: string;
   /** 每日排程（台北 21:00）要做的事；丟出錯誤會記成這個模組的錯誤 */
   daily?: (ctx: { isSunday: boolean }) => Promise<unknown>;
+  /** 每天早上 8 點的專案總覽：多放幾行（Telegram HTML）；要另外提醒的事模組自己傳 */
+  morning?: (ctx: { now: number; today: string }) => Promise<string[]>;
   /** 產品監控（每 5 分鐘） */
   monitor?: { products: () => MonitorProduct[]; run: () => Promise<MonitorOutcome[]> };
+  /** 手機 App 監控分頁的產品分組統計（只給主人） */
+  breakdowns?: () => Promise<ProductBreakdown[]>;
   /** 每週健康檢查多檢查的項目 */
   health?: (ctx: { events: SysEvent[]; now: number; since: number }) => Promise<Issue[]>;
   /** 右上角鈴鐺的待處理項目 */
@@ -69,6 +95,8 @@ export type ServerModule = {
   telegram?: TgDestination;
   /** 專案詳細頁：這個專案的回報時間（最近 12 週，畫每週數量） */
   projectFeedback?: (slug: string, sinceIso: string) => Promise<string[] | null>;
+  /** 專案詳細頁多出的分頁（例如某個專案專用的名單）；回傳這個專案要顯示的分頁，沒有就回空陣列 */
+  projectTabs?: (ctx: { project: Project; access: Access; canEdit: boolean; today: string }) => Promise<ProjectTab[]>;
   /** 預設值（還沒在設定頁填寫時用） */
   defaults?: { ownerContext?: string; ownerProfile?: string; primaryProjectSlug?: string; legacyContextKey?: string };
 };

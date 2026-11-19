@@ -355,12 +355,14 @@ export async function monitorData(now = Date.now(), access: Access = { owner: tr
   const since = addDays(taipeiDate(new Date(now)), -30);
   const { monitorProducts } = await import("./monitor"); // monitor.ts 也引用這個檔案，動態載入避免互相引用
   const { readHealth } = await import("./health");
-  const [allProducts, st, daily, health, { projects }] = await Promise.all([
+  const { productBreakdowns } = await import("./modules/registry");
+  const [allProducts, st, daily, health, { projects }, breakdowns] = await Promise.all([
     monitorProducts().catch(() => []),
     db().from("monitor_status").select("service, product, ok, changed_at, checked_at, latency_ms, last_error"),
     db().from("monitor_daily").select("product, day, users, active7, new7, db_bytes").gte("day", since).order("day"),
     access.owner ? readHealth().catch(() => null) : null,
     listProjects(),
+    access.owner ? productBreakdowns() : Promise.resolve([]),
   ]);
   const products = productsFor(access, projects.filter((p) => seesProject(access, p.id)).map((p) => p.slug), allProducts);
   type St = { service: string; product: string; ok: boolean; changed_at: string; checked_at: string | null; latency_ms: number | null; last_error: string | null };
@@ -383,6 +385,7 @@ export async function monitorData(now = Date.now(), access: Access = { owner: tr
         db_label: p.dbLabel?.[0] ?? null,
         hint: p.setupHint?.[0] ?? null,
         daily: days.filter((d) => d.product === p.key).map(({ day, users, active7, new7, db_bytes }) => ({ day, users, active7, new7, db_bytes })),
+        breakdowns: breakdowns.filter((b) => b.product === p.key).map(({ product: _product, ...b }) => b),
       };
     }),
     health: health ? { at: health.at, issues: health.issues.map((i) => ({ level: i.level, text: i.zh })), days: health.stats.days, errors: health.stats.errors, ai_usd_week: health.stats.aiUsdWeek } : null,

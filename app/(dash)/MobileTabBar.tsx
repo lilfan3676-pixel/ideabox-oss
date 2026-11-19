@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useL } from "../LangProvider";
 import type { BellItem } from "./BellMenu";
-import { IconBell, IconBox, IconGrid, IconLogout, IconPulse } from "./icons";
+import { IconBell, IconBox, IconGrid, IconLogout, IconPulse, IconSettings } from "./icons";
 import { ALL_PAGES, AppearanceControls } from "./Nav";
 import { metaModules } from "@/lib/modules/meta";
 import { navHrefs } from "@/lib/accessLogic";
@@ -108,6 +108,11 @@ export function MobileTabBar({ items, logout }: { items: BellItem[]; logout: () 
                     </Link>
                   ))}
                 </div>
+                {allowed && (
+                  <Link href="/account" className="menu-item" onClick={() => setSheet(null)}>
+                    <IconSettings size={16} /> {L("我的帳號", "My account")}
+                  </Link>
+                )}
                 <div className="m-more-section">
                   <AppearanceControls />
                 </div>

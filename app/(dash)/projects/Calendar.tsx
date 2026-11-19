@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useL } from "@/app/LangProvider";
 import type { Milestone, Project, ProjectEvent } from "@/lib/projectLogic";
+import { PLATFORM_LABEL, STATUS_LABEL, postTitle, taipeiParts, type Post } from "@/lib/postLogic";
 import { ContextMenu } from "../ideaUi";
 import { useAccess } from "../AccessContext";
 import { editsProject } from "@/lib/accessLogic";
@@ -31,6 +32,7 @@ export function Calendar({
   projects,
   events,
   milestones,
+  posts = [],
   ready,
   today,
   colorOf,
@@ -39,6 +41,7 @@ export function Calendar({
   projects: Project[];
   events: ProjectEvent[];
   milestones: Milestone[];
+  posts?: Post[]; // 發文排程（📣，點了到專案的發文排程分頁）
   ready: boolean;
   today: string;
   colorOf: (id: string) => string;
@@ -47,7 +50,7 @@ export function Calendar({
   const L = useL();
   const [month, setMonth] = useState(today.slice(0, 7));
   const [dir, setDir] = useState<"next" | "prev" | "">(""); // 換月份時往哪邊滑
-  const [menu, setMenu] = useState<{ x: number; y: number; day?: string; item?: Item } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; day?: string; item?: Item; postDay?: string } | null>(null);
   const [pending, start] = useTransition();
   const access = useAccess();
   const shown = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
@@ -66,6 +69,18 @@ export function Calendar({
     ],
     [events, milestones, shown],
   );
+
+  // 發文排程：不佔車道（忙的那幾週會被擠到「還有 N 件」裡），每天右上角一個「📣 N」，點了列出當天的貼文。略過的不算
+  const postsByDay = useMemo(() => {
+    const map = new Map<string, (Post & { time: string })[]>();
+    for (const x of posts) {
+      if (!shown.has(x.project_id) || x.status === "skipped") continue;
+      const { date, time } = taipeiParts(x.due_at);
+      map.set(date, [...(map.get(date) ?? []), { ...x, time }]);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.due_at.localeCompare(b.due_at));
+    return map;
+  }, [posts, shown]);
 
   /** 每週把排程排進固定的「車道」，跨天的橫條才會對齊 */
   const placeWeek = (ws: string): { bars: Placed[]; hidden: number[] } => {
@@ -113,6 +128,7 @@ export function Calendar({
   const [y, m] = month.split("-").map(Number);
   // 這個月的重點數字（電腦版月曆上方）與每週小計
   const monthEnd = addDays(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`, -1);
+    const postsInMonth = [...postsByDay].filter(([d]) => d >= first && d <= monthEnd).reduce((a, [, list]) => a + list.length, 0);
   const inMonth = countInRange(items, first, monthEnd);
   const timed = items.filter((it) => it.kind === "event" && it.time && it.start <= monthEnd && it.end >= first).length;
   const weekSums = weeks.map((ws) => ({ ws, ...countInRange(items, ws, addDays(ws, 6)) }));
@@ -132,7 +148,7 @@ export function Calendar({
         <dl className="calendar-hero-stats">
           <div><dt>{L("排程", "Events")}</dt><dd className="accent">{inMonth.events}</dd></div>
           <div><dt>{L("里程碑", "Milestones")}</dt><dd>{inMonth.milestones}</dd></div>
-          <div><dt>{L("有設定時間", "With a time")}</dt><dd>{timed}</dd></div>
+          {postsInMonth > 0 ? <div><dt>{L("發文", "Posts")}</dt><dd>{postsInMonth}</dd></div> : <div><dt>{L("有設定時間", "With a time")}</dt><dd>{timed}</dd></div>}
           <div><dt>{L("最忙的一週", "Busiest week")}</dt><dd>{busiest ? md(busiest.ws) : "—"}</dd></div>
         </dl>
       </div>
@@ -143,7 +159,7 @@ export function Calendar({
           <button type="button" className="btn ghost small" onClick={() => go(today.slice(0, 7))}>{L("今天", "Today")}</button>
           <button type="button" className="btn ghost small" onClick={() => move(1)} aria-label={L("下個月", "Next month")}>›</button>
         </div>
-        <span className="muted small push">{L("點空白的日子新增排程；◆ 是里程碑", "Click an empty day to add; ◆ = milestone")}</span>
+        <span className="muted small push">{L("點空白的日子新增排程；◆ 是里程碑、📣 是當天要發的貼文", "Click an empty day to add; ◆ = milestone, 📣 = posts due")}</span>
       </div>
       {!ready && <p className="error small">{L("排程需要先在 ideabox 的 Supabase 執行 migration-015-events.sql（里程碑照常顯示）。", "Scheduling needs migration-015-events.sql (milestones still show).")}</p>}
 
@@ -173,6 +189,25 @@ export function Calendar({
                   >
                     <span className="calendar-num">{+d.slice(8, 10)}</span>
                     {hidden[c] > 0 && <span className="calendar-more">{L(`還有 ${hidden[c]} 件`, `+${hidden[c]} more`)}</span>}
+                  </button>
+                );
+              })}
+              {Array.from({ length: 7 }, (_, c) => {
+                const d = addDays(ws, c);
+                const list = postsByDay.get(d);
+                if (!list) return null;
+                const left = list.filter((x) => x.status !== "posted").length;
+                return (
+                  <button
+                    key={`post-${d}`}
+                    type="button"
+                    className={`calendar-posts ${left ? "" : "done"}`}
+                    style={{ right: `calc(${((6 - c) / 7) * 100}% + 5px)` }}
+                    title={list.map((x) => `${x.time} ${PLATFORM_LABEL[x.platform][0]}｜${postTitle(x) || x.target}`).join("\n")}
+                    aria-label={L(`${md(d)} 有 ${list.length} 則發文`, `${list.length} posts on ${md(d)}`)}
+                    onClick={(e) => setMenu({ x: e.clientX, y: e.clientY, postDay: d })}
+                  >
+                    📣 {list.length}
                   </button>
                 );
               })}
@@ -215,6 +250,27 @@ export function Calendar({
             submitLabel={L("新增", "Add")}
             onSubmit={(v) => run(() => addEventAction(v.projectId, v.title, v.start, v.end, v.time))}
           />
+        </ContextMenu>
+      )}
+      {menu?.postDay && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} label={L("當天的發文", "Posts that day")}>
+          <p className="ctx-title">📣 {L(`${md(menu.postDay)} 的發文`, `Posts on ${md(menu.postDay)}`)}</p>
+          <ul className="calendar-post-list">
+            {(postsByDay.get(menu.postDay) ?? []).map((x) => {
+              const proj = projects.find((p) => p.id === x.project_id);
+              return (
+                <li key={x.id} className={x.status === "posted" ? "done" : ""}>
+                  <i style={{ background: colorOf(x.project_id) }} aria-hidden />
+                  <span>
+                    <b>{x.time}</b> {L(...PLATFORM_LABEL[x.platform])}・{L(...STATUS_LABEL[x.status])}
+                    <br />
+                    {proj && <Link href={`/projects/${proj.slug}?tab=posts`}>{postTitle(x) || x.target || proj.name}</Link>}
+                    {x.target && <span className="muted small"> {x.target}</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </ContextMenu>
       )}
       {menu?.item && (

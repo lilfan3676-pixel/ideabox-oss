@@ -26,6 +26,7 @@ import {
 } from "./actions";
 import { Schedule, type ActivityLog, type StageLog } from "./Schedule";
 import { Calendar } from "./Calendar";
+import type { Post } from "@/lib/postLogic";
 import { ProjectLinks } from "./ProjectLinks";
 import { projectInsights } from "@/lib/insights";
 import { Delta, Kpi, KpiRow, SidePanel } from "../Insight";
@@ -43,6 +44,7 @@ export function ProjectsView({
   stageLogs = [],
   activity = [],
   events = [],
+  posts = [],
   eventsReady = false,
   today,
   now,
@@ -55,6 +57,7 @@ export function ProjectsView({
   stageLogs?: StageLog[]; // 全部的「階段：A → B」日誌（時程表還原階段用）
   activity?: ActivityLog[]; // 最近一年每筆日誌的時間（時程表的活動量小點）
   events?: ProjectEvent[]; // 排程（月曆）
+  posts?: Post[]; // 發文排程（月曆上的 📣）
   eventsReady?: boolean; // 還沒執行 migration-015 時是 false
   today: string; // 台北日期，由伺服器提供
   now: number;
@@ -182,7 +185,7 @@ export function ProjectsView({
           {/* 換月曆／時程表時淡入 */}
           <div className="view-swap" key={plan}>
             {plan === "calendar" ? (
-              <Calendar projects={live} events={events} milestones={milestones} ready={eventsReady} today={today} colorOf={colorOf} report={(r) => (r.ok ? setNotice(null) : report(r))} />
+              <Calendar projects={live} events={events} milestones={milestones} posts={posts} ready={eventsReady} today={today} colorOf={colorOf} report={(r) => (r.ok ? setNotice(null) : report(r))} />
             ) : (
               <Schedule projects={live} milestones={milestones} stageLogs={stageLogs} activity={activity} today={today} now={now} colorOf={colorOf} />
             )}

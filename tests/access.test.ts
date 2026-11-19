@@ -337,3 +337,40 @@ describe("手機 App（合夥人的手機）", () => {
     expect(tables.app_devices.find((d) => d.name === "新手機")!.member_id).toBe(M);
   });
 });
+
+describe("我的帳號（合夥人自己改）", () => {
+  const verifyWith = (pw: string, uid: string) => async (_email: string, p: string) => (p === pw ? uid : null);
+
+  it("改密碼：目前密碼要對、新密碼要夠長且不一樣、只改自己的登入帳號", async () => {
+    const { changeMemberPassword } = await import("@/lib/members");
+    users.push({ id: "u-1", email: "pat@example.com", password: "oldpass11" }, { id: "u-2", email: "other@example.com", password: "keep" });
+    const m = { email: "pat@example.com", user_id: "u-1" };
+    expect(await changeMemberPassword(m, "oldpass11", "short", verifyWith("oldpass11", "u-1"))).toEqual({ ok: false, error: "weak" });
+    expect(await changeMemberPassword(m, "oldpass11", "oldpass11", verifyWith("oldpass11", "u-1"))).toEqual({ ok: false, error: "same" });
+    expect(await changeMemberPassword(m, "wrongpass", "newpass22", verifyWith("oldpass11", "u-1"))).toEqual({ ok: false, error: "wrong" });
+    // 密碼對到的是別的帳號也不行
+    expect(await changeMemberPassword(m, "oldpass11", "newpass22", verifyWith("oldpass11", "u-2"))).toEqual({ ok: false, error: "wrong" });
+    expect(await changeMemberPassword({ ...m, user_id: null }, "oldpass11", "newpass22", verifyWith("oldpass11", "u-1"))).toEqual({ ok: false, error: "failed" });
+    expect(await changeMemberPassword(m, "oldpass11", "newpass22", verifyWith("oldpass11", "u-1"))).toEqual({ ok: true });
+    expect(users.find((u) => u.id === "u-1")!.password).toBe("newpass22");
+    expect(users.find((u) => u.id === "u-2")!.password).toBe("keep");
+  });
+
+  it("推送開關、解除手機：只動得到自己的", async () => {
+    const { setMemberPush, removeMemberDevice } = await import("@/lib/members");
+    const OTHER = "44444444-4444-4444-4444-444444444444";
+    tables.members.push(member(), member({ id: OTHER, email: "x@example.com" }));
+    tables.app_devices.push(
+      { id: "d1", name: "我的", token_hash: "h1", push_token: null, member_id: M, last_seen_at: "2026-11-16T00:00:00Z" },
+      { id: "d2", name: "別人的", token_hash: "h2", push_token: null, member_id: OTHER, last_seen_at: "2026-11-16T00:00:00Z" },
+      { id: "d3", name: "主人的", token_hash: "h3", push_token: null, member_id: null, last_seen_at: "2026-11-16T00:00:00Z" },
+    );
+    await setMemberPush(M, false);
+    expect(tables.members.map((x) => x.push)).toEqual([false, true]);
+    await removeMemberDevice(M, "d2");
+    await removeMemberDevice(M, "d3");
+    expect(tables.app_devices).toHaveLength(3);
+    await removeMemberDevice(M, "d1");
+    expect(tables.app_devices.map((d) => d.id)).toEqual(["d2", "d3"]);
+  });
+});

@@ -5,7 +5,8 @@ import { useL } from "@/app/LangProvider";
 import { createAppPairing, type PairResult } from "./appActions";
 
 /** 按了才產生配對碼；10 分鐘後自動失效 */
-export function AppPairing({ memberId, label }: { memberId?: string; label?: string } = {}) {
+/** create：換成別的產生方式（合夥人在「我的帳號」幫自己產生） */
+export function AppPairing({ memberId, label, create }: { memberId?: string; label?: string; create?: () => Promise<PairResult> } = {}) {
   const L = useL();
   const [pair, setPair] = useState<PairResult | null>(null);
   const [left, setLeft] = useState(0);
@@ -41,7 +42,7 @@ export function AppPairing({ memberId, label }: { memberId?: string; label?: str
         <div>
           {expired && <p className="muted small">{L("配對碼已經失效，請重新產生。", "The code expired. Generate a new one.")}</p>}
           {pair && !pair.ok && <p className="error small">{L("產生失敗：", "Failed: ")}{pair.error}{L("（請先執行 migration-022-app.sql）", " (run migration-022-app.sql first)")}</p>}
-          <button type="button" className="btn primary" disabled={pending} onClick={() => start(async () => setPair(await createAppPairing(memberId).catch((e) => ({ ok: false, error: String(e) }) as PairResult)))}>
+          <button type="button" className="btn primary" disabled={pending} onClick={() => start(async () => setPair(await (create ? create() : createAppPairing(memberId)).catch((e) => ({ ok: false, error: String(e) }) as PairResult)))}>
             {pending ? L("產生中…", "Generating…") : label ?? L("連結一支手機", "Pair a phone")}
           </button>
         </div>
