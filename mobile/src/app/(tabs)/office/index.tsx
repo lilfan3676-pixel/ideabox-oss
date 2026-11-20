@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { OfficeRoom } from "@/components/OfficeRoom";
-import { DayHeading, Hero, soft } from "@/components/blocks";
+import { DayHeading } from "@/components/blocks";
 import { Card, Empty, ErrorNote, Loading, projectColor, Screen, Section } from "@/components/ui";
 import { useTheme, type Palette } from "@/lib/theme";
 import type { OfficeData, OfficePerson, OfficeStatus } from "@/lib/types";
@@ -78,28 +78,19 @@ export default function Office() {
       {error ? <ErrorNote text={error} onRetry={refresh} /> : null}
       {!data.ready ? <ErrorNote text="辦公室還沒準備好：ideabox 的資料庫要先執行 migration-014。" /> : null}
 
-      {/* 主角：有人在等你就講誰在等；沒有就講幾個人在工作 */}
-      {waiting ? (
-        <Hero
-          kicker="在等你"
-          big={String(waiting)}
-          title="個 Claude 在等你回覆"
-          sub={data.people
-            .filter((p) => needsYou(p.status))
-            .slice(0, 3)
-            .map((p) => `${roomName(data, p.room)}・${p.role ?? "待分配"}${p.task ? `：${p.task}` : ""}`)
-            .join("\n")}
-          color={t.warn}
-          a11y={`${waiting} 個 Claude 在等你回覆`}
-        />
-      ) : working ? (
-        <Hero kicker="辦公室" big={String(working)} title="個 Claude 在工作" sub={`在辦公室 ${onDuty} 人・沒有人在等你`} tone="soft" color={t.ok} />
-      ) : (
-        <Hero kicker="辦公室" title={onDuty ? "大家在休息" : "大家都下班了"} sub={onDuty ? `${onDuty} 人在辦公室，沒有人在工作` : "有新的 Claude Code 開始工作就會出現在這裡"} tone="soft" color={t.muted} />
-      )}
-      <Text style={{ marginHorizontal: 20, marginTop: 10, fontSize: 13, color: t.muted, fontWeight: "600" }}>
+      {/* 大字副標：有人在等你就先講（黃色），沒有就講幾個人在上班 */}
+      <Text style={{ fontSize: 22, fontWeight: "700", color: waiting ? t.accent : t.muted, marginHorizontal: 22, marginTop: 2 }} accessibilityRole="header">
+        {waiting ? `${waiting} 個 Claude 在等你回覆` : working ? `${working} 人在工作` : onDuty ? "大家在休息" : "大家都下班了"}
+      </Text>
+      <Text style={{ marginHorizontal: 22, marginTop: 4, fontSize: 13, color: t.muted, fontWeight: "600" }}>
         工作中 {working}・在等你 {waiting}・在辦公室 {onDuty}
       </Text>
+      {/* 誰在等你：點了直接跳到那間房間 */}
+      {data.people.filter((p) => needsYou(p.status)).slice(0, 3).map((p) => (
+        <Pressable key={p.key} onPress={() => { setPicked(p.room); Haptics.selectionAsync(); }} accessibilityRole="button" style={({ pressed }) => ({ marginHorizontal: 12, marginTop: 8, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, backgroundColor: t.accentSoft, borderWidth: 1, borderColor: "rgba(230,242,75,0.4)", opacity: pressed ? 0.7 : 1 })}>
+          <Text style={{ fontSize: 14, fontWeight: "700", color: t.text, lineHeight: 20 }} numberOfLines={2}>{`${roomName(data, p.room)}・${p.role ?? "待分配"}${p.task ? `：${p.task}` : ""}`}</Text>
+        </Pressable>
+      ))}
 
       {rooms.length === 0 ? (
         <Section>
@@ -133,12 +124,12 @@ export default function Office() {
                     paddingVertical: 8,
                     borderRadius: t.radiusSm,
                     borderWidth: t.borderWidth,
-                    borderColor: sel ? t.ink : t.border,
-                    backgroundColor: sel ? t.ink : t.card,
+                    borderColor: sel ? t.accent : "rgba(255,255,255,0.22)",
+                    backgroundColor: sel ? t.accent : "#0c0c0d",
                   }}
                 >
                   <View style={{ width: 8, height: 8, borderRadius: t.name === "portal" ? 0 : 4, backgroundColor: r.id === "lobby" ? "#94a3b8" : projectColor(r.id) }} />
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: sel ? t.inkText : t.text }}>{r.name}</Text>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: sel ? "#111111" : t.text }}>{r.name}</Text>
                   {wait || busy ? <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: wait ? t.warn : t.ok }} /> : null}
                 </Pressable>
               );
@@ -146,8 +137,8 @@ export default function Office() {
           </ScrollView>
 
           {room ? (
-            <Card style={{ marginHorizontal: 16, marginTop: 10, overflow: "hidden", backgroundColor: "#1b1730" }}>
-              <OfficeRoom title={room.name} color={room.id === "lobby" ? "#94a3b8" : projectColor(room.id)} people={people} now={data.now} width={screenW - 32} />
+            <Card style={{ marginHorizontal: 12, marginTop: 10, overflow: "hidden", backgroundColor: "#0c1030", borderRadius: 24, borderColor: "rgba(255,255,255,0.14)" }}>
+              <OfficeRoom title={room.name} color={room.id === "lobby" ? "#94a3b8" : projectColor(room.id)} people={people} now={data.now} width={screenW - 24} />
             </Card>
           ) : null}
 
@@ -193,7 +184,7 @@ function Person({ p, t, now, lobby, last }: { p: OfficePerson; t: Palette; now: 
   const offDuty = p.status === "ended";
   const sub = [offDuty ? `待機中・${ago(p.updated_at, now)}` : p.task, lobby && p.folder ? `📁 ${p.folder}` : null, p.sessions > 1 ? `${p.sessions} 個對話` : null].filter(Boolean).join("・");
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, opacity: offDuty ? 0.55 : 1, backgroundColor: needsYou(p.status) ? soft(t.warn, 0.12) : undefined }}>
+    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 16, opacity: offDuty ? 0.55 : 1, }}>
       <View
         style={{
           width: 36,
@@ -215,9 +206,13 @@ function Person({ p, t, now, lobby, last }: { p: OfficePerson; t: Palette; now: 
           {sub ? <Text style={{ fontSize: 14, color: offDuty ? t.muted : t.text, marginTop: 2, lineHeight: 19 }} numberOfLines={2}>{sub}</Text> : null}
         </View>
         {!offDuty ? (
-          <View style={{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: t.radiusSm, backgroundColor: soft(statusColor(t, p.status), 0.14) }}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: statusColor(t, p.status) }}>{STATUS_LABEL[p.status]}</Text>
-          </View>
+          needsYou(p.status) ? (
+            <View style={{ height: 24, paddingHorizontal: 10, borderRadius: 12, backgroundColor: t.accent, justifyContent: "center" }}>
+              <Text style={{ fontSize: 12, fontWeight: "800", color: "#111111" }}>{STATUS_LABEL[p.status]}</Text>
+            </View>
+          ) : (
+            <Text style={{ fontSize: 13, fontWeight: "600", color: statusColor(t, p.status) }}>{STATUS_LABEL[p.status]}</Text>
+          )
         ) : null}
       </View>
     </View>

@@ -6,6 +6,7 @@ import { fetchGithubRepo, formatStars, githubToText } from "./github";
 import { downloadImage, loadStoredImage, removeImage, storeImage, type ImageData } from "./images";
 import { downloadFile, esc } from "./telegram";
 import { fetchPostContent, parseLink } from "./threads";
+import { axisLabels } from "./scoring";
 
 export type IngestResult = { idea: Idea; duplicate: boolean };
 
@@ -146,21 +147,24 @@ export async function addNoteAndReanalyze(idea: Idea, note: string): Promise<Ide
 }
 
 /** 重新分析：有存圖就一起給 AI 看；舊的截圖點子從 Telegram 重新下載。 */
-export async function reanalyze(idea: Idea): Promise<Idea> {
+export async function reanalyze(idea: Idea, opts: { keepFiling?: boolean } = {}): Promise<Idea> {
   let image: ImageData | undefined;
   if (idea.image_path) image = (await loadStoredImage(idea.image_path)) ?? undefined;
   if (!image && idea.source === "photo" && idea.telegram_file_id) {
     image = (await downloadFile(idea.telegram_file_id)) ?? undefined;
   }
   const isGithub = idea.post_key?.startsWith("github:");
+  if (opts.keepFiling) return analyzeIdea(idea, image, { forceCategory: isGithub ? "github" : (idea.category ?? undefined), keepFiling: true });
   return analyzeIdea(idea, image, isGithub ? { forceCategory: "github" } : {});
 }
 
-export function scoreLine(i: Pick<Idea, "score_arx" | "score_feasibility" | "score_market" | "score_total" | "category">, projectName?: string | null): string {
+/** 三項分數一行。後兩項的名稱跟著評分角度換（行銷＝好執行／預期成效…）；舊算法評的沿用「可行／市場」 */
+export function scoreLine(i: Pick<Idea, "score_arx" | "score_feasibility" | "score_market" | "score_total" | "category"> & Pick<Partial<Idea>, "scoring">, projectName?: string | null): string {
   if (isDesign(i.category)) {
     return `可套用 ${i.score_arx ?? "-"}／好實作 ${i.score_feasibility ?? "-"}／參考價值 ${i.score_market ?? "-"}（綜合 ${i.score_total ?? "-"}）`;
   }
-  return `${projectName ? esc(projectName) : "相關"} ${i.score_arx ?? "-"}／可行 ${i.score_feasibility ?? "-"}／市場 ${i.score_market ?? "-"}（綜合 ${i.score_total ?? "-"}）`;
+  const ax = axisLabels(i.scoring?.lens ?? null);
+  return `${projectName ? esc(projectName) : "相關"} ${i.score_arx ?? "-"}／${ax.ease} ${i.score_feasibility ?? "-"}／${ax.value} ${i.score_market ?? "-"}（綜合 ${i.score_total ?? "-"}）`;
 }
 
 /** Bot 收到點子後的回覆內容（HTML）。 */

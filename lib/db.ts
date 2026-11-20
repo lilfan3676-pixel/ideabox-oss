@@ -47,6 +47,7 @@ export type Idea = {
   analyze_attempts: number;
   dup_of?: string | null; // 可能跟哪一則重複（AI 判斷，migration-019）
   dup_dismissed?: boolean; // 按過「不是重複」就不再比對
+  scoring?: import("./scoring").Scoring | null; // 第 2 版評分：評分角度＋每個專案的適用度（migration-033；空的 = 舊算法評的）
   created_at: string;
   analyzed_at: string | null;
 };

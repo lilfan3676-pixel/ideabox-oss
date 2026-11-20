@@ -1,6 +1,7 @@
 // 發文排程器的判斷邏輯（純函式，網頁、Telegram、排程共用；不能 import node 模組）
 import { parseTime } from "./appTime";
 import { isIsoDate } from "./dates";
+import { addDays } from "./dates";
 
 export const PLATFORMS = ["fb_group", "fb_page", "ig", "dcard", "line_oa"] as const;
 export type Platform = (typeof PLATFORMS)[number];
@@ -124,9 +125,7 @@ export function whenText(iso: string): string {
 
 // ---------- 一週看板 ----------
 
-export function addDays(date: string, n: number): string {
-  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-}
+export { addDays };
 
 /** 這一天所在那週的星期一 */
 export function weekStart(date: string): string {

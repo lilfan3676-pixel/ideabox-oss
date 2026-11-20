@@ -1,20 +1,21 @@
 import * as Notifications from "expo-notifications";
-import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from "expo-router";
+import { DarkTheme, router, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
+import { View } from "react-native";
 import { loadSession, useSession } from "@/lib/session";
-import { loadTheme, useTheme } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
 import "@/lib/push"; // 註冊「App 開著也要跳通知」
+import { Launch } from "@/components/Launch";
 
 export default function RootLayout() {
   const session = useSession();
   const t = useTheme();
-  const [themeReady, setThemeReady] = useState(false);
+  const [intro, setIntro] = useState(true); // 每次打開 App 播一次開場動畫
   const lastTap = Notifications.useLastNotificationResponse();
 
   useEffect(() => {
     loadSession();
-    loadTheme().finally(() => setThemeReady(true));
   }, []);
 
   // 點了推送通知：打開「今天」
@@ -23,30 +24,35 @@ export default function RootLayout() {
     router.navigate("/");
   }, [lastTap, session]);
 
-  if (session === undefined || !themeReady) return null; // 還在讀鑰匙圈，先停在啟動畫面
+  const ready = session !== undefined; // 還在讀鑰匙圈時只有開場動畫（黑底）
 
-  // 標題列、返回鍵、彈出頁跟著 ideabox 的主題（不是 iPhone 的淺色／深色）
-  const nav = t.dark ? DarkTheme : DefaultTheme;
-  const navTheme = { ...nav, colors: { ...nav.colors, primary: t.accent, background: t.bgA, card: t.bgA, text: t.text, border: t.sep } };
+  // 標題列、返回鍵、彈出頁用 App 自己的黑底配色
+  const navTheme = { ...DarkTheme, colors: { ...DarkTheme.colors, primary: t.accent, background: t.bgA, card: t.bgA, text: t.text, border: t.sep } };
   return (
-    <ThemeProvider value={navTheme}>
-      <StatusBar style={t.dark ? "light" : "dark"} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bgA } }}>
-        <Stack.Protected guard={!!session}>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen
-            name="settings"
-            options={{
-              presentation: "formSheet",
-              // 不用原生標題列：標題放在頁面裡跟著捲動，背景漸層才會一路接到頂端
-              headerShown: false,
-              sheetGrabberVisible: true,
-              sheetAllowedDetents: [0.75, 1],
-            }}
-          />
-        </Stack.Protected>
-        <Stack.Screen name="pair" options={{ gestureEnabled: false }} />
-      </Stack>
-    </ThemeProvider>
+    <View style={{ flex: 1, backgroundColor: "#000000" }}>
+      {ready ? (
+        <ThemeProvider value={navTheme}>
+          <StatusBar style="light" />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bgA } }}>
+            <Stack.Protected guard={!!session}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen
+                name="settings"
+                options={{
+                  presentation: "formSheet",
+                  // 不用原生標題列：標題放在頁面裡跟著捲動
+                  headerShown: false,
+                  sheetGrabberVisible: true,
+                  sheetAllowedDetents: [0.75, 1],
+                }}
+              />
+            </Stack.Protected>
+            <Stack.Screen name="pair" options={{ gestureEnabled: false }} />
+          </Stack>
+        </ThemeProvider>
+      ) : null}
+      {/* 每次打開 App 播一次；蓋在最上面，播完淡出 */}
+      {intro ? <Launch onDone={() => setIntro(false)} /> : null}
+    </View>
   );
 }

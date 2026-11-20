@@ -9,6 +9,7 @@ import { listProjects } from "@/lib/projects";
 import { removeRule, restoreRule, runLearningNow, saveOwnerContext, saveProjectDescriptions, sendDigestNow } from "../actions";
 import { SubmitButton } from "../ConfirmButton";
 import { AppearanceControls } from "../Nav";
+import { AssistantSettings } from "./AssistantSettings";
 import { SettingsSwitch } from "./SettingsSwitch";
 import { Suspense } from "react";
 import { listDevices } from "@/lib/app";
@@ -105,6 +106,7 @@ async function ThemeSection() {
       <h3>{L("外觀", "Appearance")}</h3>
       <p className="muted small">{L("只會記在這台裝置的瀏覽器，電腦和手機要各設定一次。", "Saved only in this device's browser, so set it separately on your computer and phone.")}</p>
       <AppearanceControls />
+      <AssistantSettings />
     </section>
   );
 }

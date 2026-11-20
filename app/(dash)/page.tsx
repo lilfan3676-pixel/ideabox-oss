@@ -9,6 +9,8 @@ import { ideaProjects } from "@/lib/projects";
 import { signedUrls } from "@/lib/images";
 import { parseFilters } from "@/lib/ideaFilters";
 import { IdeasView } from "./IdeasView";
+import { RescoreBanner } from "./RescoreBanner";
+import { isOldScoring } from "@/lib/scoring";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -41,6 +43,12 @@ export default async function IdeasPage({ searchParams }: { searchParams: Promis
   return (
     <>
       {error && <p className="error">{L("讀取失敗：", "Couldn’t load: ")}{error.message}</p>}
+      {ideas.length > 0 && (
+        <RescoreBanner
+          ready={"scoring" in ideas[0]}
+          pending={ideas.filter((i) => i.status === "analyzed" && !i.adopted && isOldScoring(i.scoring)).length}
+        />
+      )}
       <Suspense>
         <IdeasView
           ideas={ideas}

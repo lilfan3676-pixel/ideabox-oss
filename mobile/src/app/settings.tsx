@@ -1,13 +1,11 @@
 import * as Application from "expo-application";
 import Constants from "expo-constants";
 import { router } from "expo-router";
-import { setThemePref, THEME_LABEL, THEME_SWATCH, useTheme, useThemeState, type Palette } from "@/lib/theme";
+import { haloAt, useTheme } from "@/lib/theme";
 import { useCallback, useState } from "react";
 import { Alert, Linking, Pressable, Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { Hero } from "@/components/blocks";
 import { Row, Screen, Section } from "@/components/ui";
-import { saveAssistantPos, saveAssistantScale, useAssistantPos, useAssistantScale } from "@/lib/assistantPos";
 import { unpair } from "@/lib/api";
 import { disablePush, pushStatus, registerPush } from "@/lib/push";
 import { useSession } from "@/lib/session";
@@ -56,60 +54,40 @@ export default function Settings() {
       },
     ]);
 
-  const { pref, web } = useThemeState();
-  const assistant = useAssistantPos();
-  const assistantScale = useAssistantScale();
   const version = `${Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "?"}（編譯 ${Application.nativeBuildVersion ?? "開發版"}）`;
   const host = session?.server.replace(/^https?:\/\//, "") ?? "—";
   const pushOn = perm === "granted";
 
   return (
     <Screen>
-      <Text style={{ textAlign: "center", fontSize: 17, fontWeight: "700", color: t.text, marginTop: 22, marginBottom: 6 }} accessibilityRole="header">
+      <Text style={{ fontSize: 27, fontWeight: "700", color: t.text, marginTop: 30, marginBottom: 6, marginHorizontal: 22 }} accessibilityRole="header">
         設定
       </Text>
-      {/* 主角：連線與推送狀態；推送沒開就是橘色卡，直接給按鈕 */}
-      {pushOn ? (
-        <Hero kicker="已連線" title={host} sub={`推送已開啟・版本 ${version}`} tone="soft" color={t.ok} />
-      ) : (
-        <Hero kicker="已連線・推送還沒開" title={host} sub={perm === "denied" ? "通知被關掉了，要到 iPhone 設定打開才收得到提醒。" : "打開推送，排程、里程碑和產品掛掉時才會通知你。"} color={t.warn}>
-          <Pressable
-            onPress={perm === "denied" ? () => Linking.openSettings() : busy ? undefined : enable}
-            accessibilityRole="button"
-            style={({ pressed }) => ({ marginTop: 14, alignSelf: "flex-start", backgroundColor: "#ffffff", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9, opacity: pressed || busy ? 0.8 : 1 })}
-          >
-            <Text style={{ fontSize: 15, fontWeight: "800", color: t.warn }}>{perm === "denied" ? "到 iPhone 設定打開" : busy ? "處理中…" : "開啟推送"}</Text>
-          </Pressable>
-        </Hero>
-      )}
-      <Section title="外觀" footer={`網頁目前是 ${THEME_LABEL[web.theme]}・${web.mode === "dark" ? "深色" : "淺色"}${web.theme === "portal" ? "（App 沒有 Portal，跟網頁時用 Ember）" : ""}。選「跟網頁」的話，網頁換主題後 App 下次更新資料就會跟著換。`}>
-        <View style={{ padding: 14, gap: 14 }}>
-          <Choice
-            t={t}
-            label="主題"
-            value={pref.theme === "portal" ? "ember" : pref.theme}
-            options={[
-              ["web", "跟網頁"],
-              ["fluento", THEME_LABEL.fluento, THEME_SWATCH.fluento],
-              ["ember", THEME_LABEL.ember, THEME_SWATCH.ember],
-            ]}
-            onPick={(v) => setThemePref({ theme: v as typeof pref.theme })}
-          />
-          <Choice
-            t={t}
-            label="淺色／深色"
-            value={pref.mode}
-            options={[
-              ["web", "跟網頁"],
-              ["system", "跟 iPhone"],
-              ["light", "淺色"],
-              ["dark", "深色"],
-            ]}
-            onPick={(v) => setThemePref({ mode: v as typeof pref.mode })}
-          />
+      {/* 主角：連線狀態一張光環漸層卡；推送沒開就直接給按鈕 */}
+      <View style={{ marginHorizontal: 12, marginTop: 10, minHeight: 176, borderRadius: 24, padding: 16, backgroundColor: "#0f7f86", experimental_backgroundImage: haloAt(pushOn ? 1 : 4, "80% 20%") }}>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: "#ffffff" }}>已連線</Text>
+        <Text style={{ fontSize: 24, fontWeight: "700", color: "#ffffff", marginTop: 4 }} numberOfLines={2}>{host}</Text>
+        {pushOn ? null : (
+          <>
+            <Text style={{ fontSize: 14, color: "#ffffff", marginTop: 8, lineHeight: 20 }}>{perm === "denied" ? "通知被關掉了，要到 iPhone 設定打開才收得到提醒。" : "打開推送，排程、里程碑和產品掛掉時才會通知這支手機。"}</Text>
+            <Pressable
+              onPress={perm === "denied" ? () => Linking.openSettings() : busy ? undefined : enable}
+              accessibilityRole="button"
+              style={({ pressed }) => ({ marginTop: 12, alignSelf: "flex-start", backgroundColor: "#ffffff", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 9, opacity: pressed || busy ? 0.8 : 1 })}
+            >
+              <Text style={{ fontSize: 15, fontWeight: "800", color: "#111111" }}>{perm === "denied" ? "到 iPhone 設定打開" : busy ? "處理中…" : "開啟推送"}</Text>
+            </Pressable>
+          </>
+        )}
+        <View style={{ flex: 1, minHeight: 14 }} />
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: pushOn ? "#9dffbf" : "#ffe14a" }} />
+            <Text style={{ fontSize: 13, color: "#ffffff" }}>{pushOn ? "推送已開啟" : "推送還沒開"}</Text>
+          </View>
+          <Text style={{ fontSize: 13, color: "#ffffff" }}>版本 {Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? "?"}</Text>
         </View>
-      </Section>
-
+      </View>
 
       <Section
         title="推送通知"
@@ -129,59 +107,10 @@ export default function Settings() {
         )}
       </Section>
 
-      <Section title="小助手" footer="把小助手拖到想放的地方就會停在那裡；拖到螢幕左右邊緣會縮成圓形頭像，點一下就跳出來；兩根手指捏住他可以放大縮小。">
-        <Row
-          title={assistant?.edge ? "目前收在邊邊" : assistant ? "目前在你拖過去的位置" : "目前在右下角"}
-          subtitle={assistant ? "點一下回到右下角" : undefined}
-          onPress={assistant ? () => saveAssistantPos(null) : undefined}
-        />
-        <Row
-          title={assistantScale === 1 ? "原本大小" : `目前是原本的 ${Math.round(assistantScale * 100)}%`}
-          subtitle={assistantScale === 1 ? undefined : "點一下回到原本大小"}
-          onPress={assistantScale === 1 ? undefined : () => saveAssistantScale(null)}
-          last
-        />
-      </Section>
 
       <Section footer={`App 只能看、不能改；要改資料請到網頁或用 Telegram。\n版本 ${version}`}>
         <Row title="解除配對" onPress={confirmUnpair} destructive last />
       </Section>
     </Screen>
-  );
-}
-
-/** 一排可以選的膠囊按鈕（跟網頁的主題切換器一樣） */
-function Choice({ t, label, value, options, onPick }: { t: Palette; label: string; value: string; options: [string, string, [string, string]?][]; onPick: (v: string) => void }) {
-  return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ fontSize: 13, fontWeight: "600", color: t.muted }}>{label}</Text>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-        {options.map(([v, text, swatch]) => {
-          const on = v === value;
-          return (
-            <Pressable
-              key={v}
-              onPress={() => onPick(v)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderRadius: t.radiusSm,
-                borderWidth: t.borderWidth,
-                borderColor: on ? t.ink : t.border,
-                backgroundColor: on ? t.ink : t.field,
-              }}
-            >
-              {swatch ? <View style={{ width: 12, height: 12, borderRadius: t.name === "portal" ? 0 : 6, experimental_backgroundImage: `linear-gradient(135deg, ${swatch[0]}, ${swatch[1]})` }} /> : null}
-              <Text style={{ fontSize: 15, fontWeight: "600", color: on ? t.inkText : t.text }}>{text}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
   );
 }

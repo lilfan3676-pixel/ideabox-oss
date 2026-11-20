@@ -10,7 +10,7 @@ import { deleteIdea, saveNote, setCategory } from "./actions";
 import { AutoSelect, ConfirmButton, SubmitButton } from "./ConfirmButton";
 import { IconStar } from "./icons";
 import { DupNotice } from "./DupNotice";
-import { ScoreBlock, SourceButton, useFlagToggle, type CardExtra } from "./ideaUi";
+import { ProjectFits, ScoreBlock, SourceButton, useFlagToggle, type CardExtra } from "./ideaUi";
 
 // 設計類（介面設計、GitHub）的卡片、列表列與詳情：跟一般點子放在同一個點子庫，只是長相不同
 
@@ -174,6 +174,7 @@ export function DesignDetail({ idea: i, img, now, picks }: { idea: Idea; img?: s
       {i.score_total !== null && (
         <ScoreBlock total={i.score_total} rows={[{ label: L("可套用", "Applicable"), n: i.score_arx }, { label: L("好實作", "Easy to build"), n: i.score_feasibility }, { label: L("參考價值", "Reference value"), n: i.score_market }]} />
       )}
+      <ProjectFits idea={i} />
       {!!d.styles?.length && <p className="chips">{d.styles.map((s) => <span key={s}>{s}</span>)}</p>}
       {!!d.learn?.length && (
         <>

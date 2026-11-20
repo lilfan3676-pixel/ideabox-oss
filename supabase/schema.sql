@@ -192,6 +192,7 @@ create table if not exists public.ideas (
   project_id uuid references public.projects (id) on delete set null,
   dup_of uuid references public.ideas (id) on delete set null, -- AI 判斷可能重複的那一則
   dup_dismissed boolean not null default false,
+  scoring jsonb,                     -- 第 2 版評分：評分角度＋每個專案的適用度
   created_at timestamptz not null default now(),
   analyzed_at timestamptz
 );

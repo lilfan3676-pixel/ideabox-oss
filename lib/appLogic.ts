@@ -78,7 +78,7 @@ export function todayEventsPush(events: { title: string; start_date: string; end
 
 // ---------- 主題（網頁選的主題同步給 App） ----------
 
-export const UI_THEMES = ["fluento", "ember", "portal"] as const;
+export const UI_THEMES = ["fluento", "ember", "portal", "mono"] as const;
 export type UiTheme = (typeof UI_THEMES)[number];
 export type UiMode = "light" | "dark";
 

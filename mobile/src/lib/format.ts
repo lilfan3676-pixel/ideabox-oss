@@ -2,6 +2,9 @@
 
 const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
 
+/** 有時間的事開始 30 分鐘後算做完（今天頁、月曆共用） */
+export const pastBy = (start: string | null | undefined, nowHm: string) => !!start && +start.slice(0, 2) * 60 + +start.slice(3, 5) + 30 <= +nowHm.slice(0, 2) * 60 + +nowHm.slice(3, 5);
+
 export function taipeiToday(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
@@ -45,4 +48,9 @@ export function ago(iso: string, now = Date.now()): string {
 
 export function rangeText(start: string, end: string): string {
   return start === end ? md(start) : `${md(start)}～${md(end)}`;
+}
+
+/** 台北時間的 HH:MM */
+export function taipeiHm(now = new Date()): string {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
 }

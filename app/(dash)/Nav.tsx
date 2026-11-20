@@ -364,7 +364,7 @@ export function useView(def: string, allowed: readonly string[]): string {
 
 // ---------- 主題 ----------
 
-type Theme = "fluento" | "ember" | "portal";
+type Theme = "fluento" | "ember" | "portal" | "mono";
 type Mode = "light" | "dark";
 
 function readAttr<T extends string>(name: "theme" | "mode", fallback: T): T {
@@ -460,6 +460,9 @@ export function ThemeSwitch({ inline = false }: { inline?: boolean }) {
       </button>
       <button type="button" role="radio" aria-checked={theme === "portal"} className={theme === "portal" ? "active" : ""} onClick={() => applyTheme("portal")}>
         <span className="dot portal" /> Portal
+      </button>
+      <button type="button" role="radio" aria-checked={theme === "mono"} className={theme === "mono" ? "active" : ""} onClick={() => applyTheme("mono")}>
+        <span className="dot mono" /> {L("黑白", "Mono")}
       </button>
     </div>
   );

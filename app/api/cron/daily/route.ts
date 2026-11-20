@@ -47,6 +47,14 @@ export async function GET(req: NextRequest) {
     report.retryError = String(err);
   }
 
+  // 1b. 舊點子用新評分重評：使用者按過「重評」但還沒跑完的，每晚接著跑一小批
+  try {
+    const { rescoreBatch, rescoreStatus } = await import("@/lib/rescore");
+    if ((await rescoreStatus()).on) report.rescore = await rescoreBatch(12, 45_000);
+  } catch (err) {
+    report.rescoreError = String(err);
+  }
+
   // 2. 週日：先把這週的修正整理成規則（補助雷達會用到），再更新補助雷達、發週報
   if (isSunday) {
     try {

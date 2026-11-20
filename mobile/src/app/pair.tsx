@@ -4,13 +4,14 @@ import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Backdrop } from "@/components/ui";
 import { useStyles, useTheme, type Palette } from "@/lib/theme";
 import { ApiError, pair } from "@/lib/api";
 import { cleanServer } from "@/lib/session";
 
+const LOGO = require("../../assets/logo-444.png");
 const DEFAULT_SERVER = "";
 
 type Mode = "home" | "scan" | "manual";
@@ -114,18 +115,26 @@ export default function Pair() {
         automaticallyAdjustKeyboardInsets
         contentInsetAdjustmentBehavior="never"
       >
-        <Text style={st.logo}>ideabox</Text>
-        <Text style={st.lead}>在電腦打開 ideabox →「設定」→「手機 App」，按「連結一支手機」。</Text>
+        {/* 標誌後面一圈冷光（跟今天頁晚上的月亮一樣） */}
+        <View style={{ alignItems: "center", marginTop: mode === "home" ? 60 : 0 }}>
+          {mode === "home" ? (
+            <View style={{ width: 300, height: 300, alignItems: "center", justifyContent: "center", experimental_backgroundImage: "radial-gradient(circle, rgba(120,140,190,0.34) 0%, rgba(120,140,190,0) 68%)" }}>
+              <Image source={LOGO} accessibilityLabel="ideabox 標誌" style={{ width: 148, height: 148, borderRadius: 74, borderWidth: 2, borderColor: "rgba(255,255,255,0.85)" }} />
+            </View>
+          ) : null}
+          <Text accessibilityRole="header" style={st.logo}>連上你的 ideabox</Text>
+          <Text style={st.lead}>在電腦打開 ideabox 網頁的「設定 → 手機 App」，掃上面的 QR code。</Text>
+        </View>
 
-        {error ? <Text style={st.error}>{error}</Text> : null}
+        {error ? <Text style={[st.error, { textAlign: "center" }]}>{error}</Text> : null}
 
         {mode === "home" ? (
-          <View style={{ gap: 12, marginTop: 28 }}>
+          <View style={{ gap: 12, marginTop: 28, flexGrow: 1, justifyContent: "flex-end" }}>
             <Pressable style={st.primary} onPress={startScan} disabled={busy}>
-              {busy ? <ActivityIndicator color={t.inkText} /> : <Text style={st.primaryText}>掃描配對 QR code</Text>}
+              {busy ? <ActivityIndicator color={t.inkText} /> : <Text style={st.primaryText}>掃 QR code 配對</Text>}
             </Pressable>
             <Pressable style={st.secondary} onPress={() => { setError(null); setMode("manual"); }} disabled={busy}>
-              <Text style={st.secondaryText}>手動輸入</Text>
+              <Text style={st.secondaryText}>手動輸入配對碼</Text>
             </Pressable>
           </View>
         ) : (
@@ -161,12 +170,12 @@ export default function Pair() {
 
 const make = (t: Palette) => StyleSheet.create({
   wrap: { paddingHorizontal: 24, flexGrow: 1 },
-  logo: { fontSize: 34, fontWeight: "900", color: t.text, letterSpacing: -0.5 },
-  lead: { fontSize: 17, lineHeight: 25, color: t.muted, marginTop: 10 },
+  logo: { fontSize: 27, fontWeight: "700", color: t.text, textAlign: "center", marginTop: 8 },
+  lead: { fontSize: 15, lineHeight: 24, color: t.muted, marginTop: 10, textAlign: "center", paddingHorizontal: 12 },
   error: { fontSize: 15, lineHeight: 21, color: t.danger, marginTop: 18 },
-  primary: { height: 52, borderRadius: t.radiusSm, backgroundColor: t.ink, alignItems: "center", justifyContent: "center", boxShadow: t.name === "portal" ? t.shadow : undefined },
+  primary: { height: 56, borderRadius: 28, backgroundColor: t.ink, alignItems: "center", justifyContent: "center", boxShadow: t.name === "portal" ? t.shadow : undefined },
   primaryText: { color: t.inkText, fontSize: 17, fontWeight: "700" },
-  secondary: { height: 52, borderRadius: t.radiusSm, backgroundColor: t.card, borderWidth: t.borderWidth, borderColor: t.border, alignItems: "center", justifyContent: "center" },
+  secondary: { height: 52, borderRadius: 26, backgroundColor: "#0c0c0d", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center" },
   secondaryText: { color: t.text, fontSize: 17, fontWeight: "700" },
   label: { fontSize: 13, color: t.muted, marginTop: 6, marginLeft: 4 },
   input: { height: 50, borderRadius: t.name === "portal" ? 0 : 12, borderWidth: t.borderWidth, borderColor: t.border, backgroundColor: t.field, paddingHorizontal: 14, fontSize: 17, color: t.text },

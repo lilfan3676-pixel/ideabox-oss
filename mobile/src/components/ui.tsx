@@ -1,13 +1,20 @@
 // 共用畫面元件：跟 ideabox 網頁同一套主題（漸層背景＋半透明卡片；Portal 是直角粗框＋硬陰影）
 import { type ReactNode } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { Sprite } from "./Sprite";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { PROJECT_COLORS, useStyles, useTheme, type Palette } from "@/lib/theme";
 
 /** 每個專案一個顏色：照 ideabox 的專案排序依序分配（跟網頁一樣）；還不知道排序時才用 id 算 */
 const order = new Map<string, number>();
 export function rememberProjectOrder(ids: string[]) {
   ids.forEach((id, i) => order.set(id, i));
+}
+/** 專案在 ideabox 排序裡是第幾個（光環磚的顏色用；還不知道排序時用 id 算一個固定的數） */
+export function projectIndex(id: string): number {
+  const i = order.get(id);
+  if (i !== undefined) return i;
+  let h = 2166136261;
+  for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return h % 6;
 }
 export function projectColor(id: string): string {
   let i = order.get(id);
@@ -35,7 +42,8 @@ export function Screen({ children, refreshing, onRefresh }: { children: ReactNod
     <ScrollView
       style={{ flex: 1, backgroundColor: t.bgA, experimental_backgroundImage: backdropImage(t) }}
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={{ paddingBottom: 32 }}
+      // 底部留位置給懸浮的三顆按鈕
+      contentContainerStyle={{ paddingBottom: 130 }}
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={t.accent} /> : undefined}
     >
       {children}
@@ -124,23 +132,15 @@ export function Pill({ text, color, style }: { text: string; color?: string; sty
 
 export function Empty({ text }: { text: string }) {
   const s = useStyles(make);
-  // 沒資料時小助手攤手
-  return (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 10 }}>
-      <Sprite anim="shrug" height={44} />
-      <Text style={[s.empty, { flex: 1, paddingLeft: 4 }]}>{text}</Text>
-    </View>
-  );
+  return <Text style={s.empty}>{text}</Text>;
 }
 
 export function Loading() {
   const t = useTheme();
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingTop: 80, backgroundColor: t.bgA }}>
-      <Backdrop />
-      {/* 讀取中小助手跑步 */}
-      <Sprite anim="run-right" height={84} />
-      <Text style={{ color: t.muted, fontSize: 15, marginTop: 8 }}>讀取中…</Text>
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: t.bgA }}>
+      <ActivityIndicator color="#ffffff" />
+      <Text style={{ color: t.muted, fontSize: 15, marginTop: 12 }}>讀取中…</Text>
     </View>
   );
 }

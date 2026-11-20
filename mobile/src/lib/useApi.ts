@@ -5,7 +5,7 @@ import { AppState } from "react-native";
 import { rememberProjectOrder } from "@/components/ui";
 import { api, ApiError } from "./api";
 import { getSession, saveSession } from "./session";
-import { setWebTheme } from "./theme";
+import { onDockRefresh } from "./dock";
 
 type State<T> = { data: T | null; error: string | null; loading: boolean; refreshing: boolean };
 
@@ -29,8 +29,6 @@ export function useApi<T>(path: string, opts?: { pollMs?: number }) {
       // 首頁與月曆帶有完整的專案排序，記下來給顏色用
       const list = (data as { projects?: { id: string }[] }).projects;
       if (Array.isArray(list)) rememberProjectOrder(list.map((x) => x.id));
-      // 首頁帶回網頁目前的主題，App 跟著換
-      setWebTheme((data as { theme?: { theme?: unknown; mode?: unknown } }).theme);
       // 首頁也帶回這支手機能看的分頁：你在網頁改了合夥人的權限，App 跟著換
       const tabs = (data as { access?: { tabs?: unknown } }).access?.tabs;
       const s = getSession();
@@ -64,6 +62,9 @@ export function useApi<T>(path: string, opts?: { pollMs?: number }) {
     const sub = AppState.addEventListener("change", (s) => s === "active" && load("auto"));
     return () => sub.remove();
   }, [load]);
+
+  // 底部懸浮列的「重新整理」：目前掛著的畫面都重讀一次
+  useEffect(() => onDockRefresh(() => load("pull")), [load]);
 
   return { ...state, refresh: () => load("pull") };
 }

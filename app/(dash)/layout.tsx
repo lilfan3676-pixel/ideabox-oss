@@ -10,6 +10,7 @@ import { logout } from "../login/actions";
 import { AccountMenu, BellMenu, type BellItem } from "./BellMenu";
 import { MobileTabBar } from "./MobileTabBar";
 import { LogoMark } from "../LogoMark";
+import { WebAssistant } from "./WebAssistant";
 import { IconBell, IconSearch } from "./icons";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
 import { ModeToggle, PageName, SideRail, ThemeDock, TopNav, type RailProject } from "./Nav";
@@ -110,6 +111,7 @@ export default async function DashLayout({ children }: { children: React.ReactNo
       </div>
       </div>
       <ThemeDock />
+      {access.owner ? <WebAssistant /> : null}
       <MobileTabBar items={bell} logout={logout} />
       <Suspense fallback={null}>
         <PortalFx />

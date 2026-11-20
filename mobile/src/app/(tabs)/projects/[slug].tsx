@@ -1,11 +1,13 @@
 // 單一專案：主角是「目前階段＋下一步」大卡；接下來的排程與里程碑合成一張精簡清單；日誌縮小變淡
-import { Stack, useLocalSearchParams } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import { SymbolView } from "expo-symbols";
 import * as WebBrowser from "expo-web-browser";
-import { Text, View } from "react-native";
-import { Compact, Hero, Progress } from "@/components/blocks";
-import { Empty, ErrorNote, Loading, projectColor, Screen, Section } from "@/components/ui";
+import { Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Compact, Progress } from "@/components/blocks";
+import { Empty, ErrorNote, Loading, projectIndex, Screen, Section } from "@/components/ui";
 import { ago, daysBetween, md, relDay, taipeiToday } from "@/lib/format";
-import { useTheme } from "@/lib/theme";
+import { haloAt, useTheme } from "@/lib/theme";
 import type { ProjectData } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 
@@ -14,16 +16,16 @@ const LINK: Record<string, string> = { website: "官網", instagram: "Instagram"
 
 export default function ProjectDetail() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { data, error, loading, refreshing, refresh } = useApi<ProjectData>(`/api/app/projects/${encodeURIComponent(slug)}`);
   const today = taipeiToday();
   const title = data?.project.name ?? "";
 
-  if (loading && !data) return <><Stack.Screen options={{ title, headerLargeTitle: false }} /><Loading /></>;
-  if (!data) return <Screen onRefresh={refresh}><Stack.Screen options={{ title }} />{error ? <ErrorNote text={error} onRetry={refresh} /> : null}</Screen>;
+  if (loading && !data) return <><Stack.Screen options={{ title, headerShown: true }} /><Loading /></>;
+  if (!data) return <Screen onRefresh={refresh}><Stack.Screen options={{ title, headerShown: true }} />{error ? <ErrorNote text={error} onRetry={refresh} /> : null}</Screen>;
 
   const p = data.project;
-  const color = projectColor(p.id);
   const links = Object.entries(p.links).filter(([, url]) => url);
   const statusNote = p.status === "paused" ? "・暫停中" : p.status === "done" ? "・已完成" : "";
 
@@ -35,19 +37,24 @@ export default function ProjectDetail() {
 
   return (
     <Screen refreshing={refreshing} onRefresh={refresh}>
-      <Stack.Screen options={{ title: p.name }} />
+      <Stack.Screen options={{ title: p.name, headerShown: false }} />
       {error ? <ErrorNote text={error} onRetry={refresh} /> : null}
 
-      {/* 主角：目前階段＋下一步 */}
-      <Hero kicker={`目前階段 ${p.stage_index + 1}/${p.stages.length}${statusNote}`} title={p.stages[p.stage_index] ?? "—"} color={color} a11y={`目前階段 ${p.stages[p.stage_index] ?? ""}，下一步 ${p.next_step ?? "未設定"}`}>
-        <View style={{ marginTop: 12 }}>
+      {/* 主角：整片光環漸層講目前階段＋下一步（顏色跟專案清單那塊磚一樣） */}
+      <View style={{ marginTop: -insets.top, paddingTop: insets.top + 8, paddingHorizontal: 22, paddingBottom: 26, borderBottomLeftRadius: 32, borderBottomRightRadius: 32, backgroundColor: "#1a1a1c", experimental_backgroundImage: haloAt(projectIndex(p.id), "72% 30%") }} accessibilityLabel={`${p.name}，目前階段 ${p.stages[p.stage_index] ?? ""}，下一步 ${p.next_step ?? "未設定"}`}>
+        <Pressable onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="回專案" hitSlop={6} style={({ pressed }) => ({ width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(0,0,0,0.42)", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}>
+          <SymbolView name="chevron.left" size={17} tintColor="#ffffff" weight="bold" />
+        </Pressable>
+        <Text accessibilityRole="header" style={{ fontSize: 27, fontWeight: "700", color: "#ffffff", marginTop: 18, lineHeight: 32 }}>{p.name}</Text>
+        <Text style={{ fontSize: 22, fontWeight: "700", color: "rgba(255,255,255,0.76)", lineHeight: 28 }}>{`${p.stages[p.stage_index] ?? "—"}・第 ${p.stage_index + 1} 階段，共 ${p.stages.length}${statusNote}`}</Text>
+        <View style={{ marginTop: 14 }}>
           <Progress total={p.stages.length} done={p.stage_index + 1} color="#ffffff" track="rgba(255,255,255,0.3)" />
         </View>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: "#ffffff", opacity: 0.85, marginTop: 14 }}>下一步</Text>
-        <Text style={{ fontSize: 17, fontWeight: "800", color: "#ffffff", marginTop: 2, lineHeight: 24 }}>{p.next_step ?? "還沒設定下一步"}</Text>
-      </Hero>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.85)", marginTop: 20 }}>下一步</Text>
+        <Text style={{ fontSize: 20, fontWeight: "700", color: "#ffffff", marginTop: 3, lineHeight: 27, textShadowColor: "rgba(0,0,0,0.3)", textShadowRadius: 10 }}>{p.next_step ?? "還沒設定下一步"}</Text>
+      </View>
 
-      {p.description ? <Text style={{ marginHorizontal: 20, marginTop: 12, fontSize: 14, lineHeight: 20, color: t.muted }}>{p.description}</Text> : null}
+      {p.description ? <Text style={{ marginHorizontal: 22, marginTop: 14, fontSize: 14, lineHeight: 20, color: t.muted }}>{p.description}</Text> : null}
 
       <Section title="接下來">
         {later.length ? (
@@ -72,11 +79,16 @@ export default function ProjectDetail() {
       </Section>
 
       {links.length > 0 && (
-        <Section title="連結">
-          {links.map(([k, url], i) => (
-            <Compact key={k} t={t} left={LINK[k] ?? k} leftWidth={84} title={url.replace(/^https?:\/\//, "")} titleWeight="500" onPress={() => WebBrowser.openBrowserAsync(url)} last={i === links.length - 1} />
-          ))}
-        </Section>
+        <View style={{ marginHorizontal: 20, marginTop: 22 }}>
+          <Text style={{ fontSize: 13, fontWeight: "600", color: t.muted, marginBottom: 8, marginLeft: 2 }}>連結</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {links.map(([k, url]) => (
+              <Pressable key={k} onPress={() => WebBrowser.openBrowserAsync(url)} accessibilityRole="link" style={({ pressed }) => ({ height: 36, paddingHorizontal: 15, borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", backgroundColor: "#0c0c0d", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}>
+                <Text style={{ fontSize: 14, fontWeight: "600", color: "#ffffff" }}>{LINK[k] ?? k}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
       )}
 
       {/* 日誌：最次要，字最小 */}

@@ -23,7 +23,9 @@ const md = (d: string) => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
 /** 台北時間現在是當天的第幾分鐘（台灣沒有日光節約時間） */
 export const taipeiMinutes = (now: number) => Math.floor((((now + 8 * 3_600_000) % DAY) + DAY) % DAY / 60_000);
 
-export const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+import { addDays } from "./dates";
+
+export { addDays };
 
 /** 下一步的短指紋：按鈕按下去時確認問的還是同一件事（隔幾天才按、下一步已經換了就不動） */
 export const stepKey = (text: string) => createHash("sha1").update(text.trim()).digest("hex").slice(0, 6);

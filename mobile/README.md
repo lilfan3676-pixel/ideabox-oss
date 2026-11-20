@@ -3,8 +3,8 @@
 只給主人自己用的唯讀 App：今天的排程、月曆、專案、點子、辦公室、產品燈號，加上推送通知。
 資料都從你部署的 ideabox 網站的 `/api/app/*` 讀（`lib/app.ts`），App 裡不放任何資料庫金鑰。
 
-- Expo SDK 57、expo-router（`src/app/`），iOS 原生分頁列
-- 主題跟網頁一樣（Fluento／Ember／Portal × 淺／深色，`src/lib/theme.ts`），預設跟著網頁目前選的
+- Expo SDK 57、expo-router（`src/app/`）。沒有 iPhone 的分頁列：換頁用左下角打開的玻璃珠選單，底部是懸浮的三顆按鈕（選單／這一頁／重新整理）
+- 外觀固定一套：純黑底、白字、霓虹黃重點色、彩色光環漸層磚（`src/lib/theme.ts`），不跟網頁主題走；今天頁的背景跟著時間換（白天／傍晚／晚上，`src/lib/sky.ts`）。動畫用內建的 `Animated`（`src/lib/motion.ts`）。打開 App 會播一段開場動畫（`assets/launch.mp4`）
 - 配對：網頁「設定 → 手機 App」產生 QR code（10 分鐘、用一次）→ App 掃描或手動輸入網址與配對碼 → 拿到這台手機專用的憑證，存在鑰匙圈。網頁上解除配對後 App 自動回到配對畫面。
 - 推送：有填時間的排程開始前 30 分鐘、早上 8 點的今日排程與里程碑、產品掛掉／恢復。
 

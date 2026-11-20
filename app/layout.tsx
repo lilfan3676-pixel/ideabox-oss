@@ -14,6 +14,7 @@ import "./motion.css"; // 換頁、深淺色、主題切換的動態效果
 import "./mobile.css"; // 手機簡易版（720px 以下）
 import { getLang } from "@/lib/i18nServer";
 import { LangProvider } from "./LangProvider";
+import { LaunchIntro } from "./LaunchIntro";
 
 export async function generateMetadata(): Promise<Metadata> {
   const en = (await getLang()) === "en";
@@ -38,6 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       </head>
       <body>
         <LangProvider lang={lang}>{children}</LangProvider>
+        <LaunchIntro />
       </body>
     </html>
   );

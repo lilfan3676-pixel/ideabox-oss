@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type LiHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useL } from "../LangProvider";
+import { useL, useLang } from "../LangProvider";
+import { axisLabels } from "@/lib/scoring";
+import type { Idea } from "@/lib/db";
 import { IconArrowUpRight, IconClose, IconGithub, IconGrid, IconInstagram, IconList, IconThreads } from "./icons";
 
 // ---------- 卡片的拖曳與勾選（點子庫傳進來，卡片本身不用管邏輯） ----------
@@ -225,6 +227,38 @@ export function DetailPanel({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** 專案 id → 名稱（點子庫頁面提供；卡片的分數標籤、詳情的各專案適用度都用它） */
+export const ProjectNames = createContext<Map<string, string>>(new Map());
+
+/** 詳情裡「各專案適用度」：新評分才有，一個專案一條，分數高的排前面；也寫出這則是從哪個角度評的 */
+export function ProjectFits({ idea }: { idea: Pick<Idea, "scoring" | "project_id" | "category"> }) {
+  const L = useL();
+  const lang = useLang();
+  const names = useContext(ProjectNames);
+  const s = idea.scoring;
+  if (!s) return null;
+  const rows = Object.entries(s.projects ?? {})
+    .filter(([id]) => names.has(id))
+    .sort((a, b) => b[1] - a[1]);
+  const lens = axisLabels(s.lens ?? null, lang).lens;
+  if (!rows.length && !lens) return null;
+  return (
+    <div className="project-fits">
+      <h3 className="detail-h">
+        {L("各專案適用度", "Fit by project")}
+        {lens && <span className="muted small fit-lens">{L(`評分角度：${lens}`, `Scored as: ${lens}`)}</span>}
+      </h3>
+      {rows.map(([id, n]) => (
+        <div className="bar-row" key={id}>
+          <span className="bar-label" title={names.get(id)}>{names.get(id)}{idea.project_id === id ? " ★" : ""}</span>
+          <span className="bar-track" aria-hidden><i style={{ width: `${n * 10}%` }} /></span>
+          <span className="bar-n">{n}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 

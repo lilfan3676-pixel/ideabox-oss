@@ -1,10 +1,11 @@
 // 專案：進行中的每個專案一張卡（大字名稱、階段、進度條、下一步突出），暫停的縮成精簡列
 import { router } from "expo-router";
-import { Pressable, Text, View } from "react-native";
-import { Compact, Progress, soft } from "@/components/blocks";
-import { Card, Empty, ErrorNote, Loading, projectColor, Screen, Section } from "@/components/ui";
+import { Animated, Pressable, Text, View } from "react-native";
+import { Compact, Progress } from "@/components/blocks";
+import { Empty, ErrorNote, Loading, projectColor, Screen, Section } from "@/components/ui";
 import { ago } from "@/lib/format";
-import { useTheme, type Palette } from "@/lib/theme";
+import { useRise } from "@/lib/motion";
+import { halo, useTheme } from "@/lib/theme";
 import type { AppProject, HomeData } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 
@@ -21,9 +22,11 @@ export default function Projects() {
     <Screen refreshing={refreshing} onRefresh={refresh}>
       {error ? <ErrorNote text={error} onRetry={refresh} /> : null}
       {active.length ? (
-        <Text style={{ marginHorizontal: 20, marginTop: 4, fontSize: 15, color: t.muted, fontWeight: "600" }}>{active.length} 個進行中{paused.length ? `・${paused.length} 個暫停` : ""}</Text>
+        <Text style={{ marginHorizontal: 22, marginTop: 2, fontSize: 22, color: t.muted, fontWeight: "700" }}>{active.length} 個進行中{paused.length ? `・${paused.length} 個暫停` : ""}</Text>
       ) : null}
-      {active.map((p) => <ProjectCard key={p.id} p={p} t={t} />)}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginHorizontal: 12, marginTop: 14 }}>
+        {active.map((p, i) => <ProjectTile key={p.id} p={p} i={(data?.projects ?? []).indexOf(p)} wide={i === 0 || (active.length % 2 === 0 && i === active.length - 1)} />)}
+      </View>
       {paused.length > 0 && (
         <Section title="暫停中">
           {paused.map((p, i) => (
@@ -36,28 +39,27 @@ export default function Projects() {
   );
 }
 
-function ProjectCard({ p, t }: { p: AppProject; t: Palette }) {
-  const color = projectColor(p.id);
+/** 光環磚：專案名、階段、進度、下一步；第一個（最近有動靜的排在最前）佔一整排 */
+function ProjectTile({ p, i, wide }: { p: AppProject; i: number; wide: boolean }) {
+  const rise = useRise(i * 70);
   return (
-    <Pressable onPress={() => open(p)} accessibilityRole="button" accessibilityLabel={`${p.name}，${p.stage ?? ""}，下一步 ${p.next_step ?? "未設定"}`} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-      <Card style={{ marginHorizontal: 16, marginTop: 12, padding: 16, gap: 10 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
-          <Text style={{ flex: 1, fontSize: 21, fontWeight: "800", color: t.text }} numberOfLines={1}>{p.name}</Text>
-          {p.stage ? (
-            <View style={{ backgroundColor: soft(color, 0.16), borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
-              <Text style={{ fontSize: 13, fontWeight: "800", color: t.text }}>{p.stage}　{p.stage_index + 1}/{p.stage_count}</Text>
-            </View>
-          ) : null}
-          <Text style={{ fontSize: 20, color: t.faint, marginTop: -2 }}>›</Text>
+    <Animated.View style={{ flexGrow: 1, flexBasis: wide ? "100%" : "48%", ...rise }}>
+      <Pressable
+        onPress={() => open(p)}
+        accessibilityRole="button"
+        accessibilityLabel={`${p.name}，${p.stage ?? ""}，下一步 ${p.next_step ?? "未設定"}`}
+        style={({ pressed }) => ({ minHeight: wide ? 150 : 206, borderRadius: 20, padding: 13, overflow: "hidden", backgroundColor: "#1a1a1c", experimental_backgroundImage: halo(i), opacity: pressed ? 0.88 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] })}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={{ flex: 1, fontSize: 17, fontWeight: "800", color: "#ffffff" }} numberOfLines={1}>{p.name}</Text>
+          {p.stage ? <Text style={{ fontSize: 12, fontWeight: "700", color: "#ffffff", maxWidth: wide ? 160 : 76 }} numberOfLines={1}>{p.stage} {p.stage_index + 1}/{p.stage_count}</Text> : null}
         </View>
-        {p.stage_count > 0 ? <Progress total={p.stage_count} done={p.stage_index + 1} color={color} track={t.accentSoft} /> : null}
-        <View>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: t.muted }}>下一步</Text>
-          <Text style={{ fontSize: 16, fontWeight: "700", color: p.next_step ? t.text : t.faint, marginTop: 2, lineHeight: 22 }} numberOfLines={3}>{p.next_step ?? "還沒設定下一步"}</Text>
-        </View>
-        <Text style={{ fontSize: 12, color: t.muted }}>{ago(p.last_activity_at)}有動靜</Text>
-      </Card>
-    </Pressable>
+        {p.stage_count > 0 ? <View style={{ marginTop: 9 }}><Progress total={p.stage_count} done={p.stage_index + 1} color="#ffffff" track="rgba(255,255,255,0.3)" /></View> : null}
+        <Text style={{ fontSize: 11, fontWeight: "700", color: "rgba(255,255,255,0.85)", marginTop: 14 }}>下一步</Text>
+        <Text style={{ fontSize: wide ? 17 : 15, fontWeight: "700", color: "#ffffff", lineHeight: wide ? 23 : 20, marginTop: 2, textShadowColor: "rgba(0,0,0,0.3)", textShadowRadius: 8 }} numberOfLines={wide ? 2 : 4}>{p.next_step ?? "還沒設定下一步"}</Text>
+        <View style={{ flex: 1, minHeight: 10 }} />
+        <Text style={{ fontSize: 12, color: "#ffffff" }}>{ago(p.last_activity_at)}有動靜</Text>
+      </Pressable>
+    </Animated.View>
   );
 }

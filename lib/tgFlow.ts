@@ -1,4 +1,5 @@
 import "server-only";
+import { bestFit } from "./scoring";
 import { randomBytes } from "node:crypto";
 import { db, type Idea } from "./db";
 import { env } from "./env";
@@ -104,7 +105,7 @@ export async function replyIdea(chatId: number, idea: Idea, duplicate: boolean, 
     await buttonsReady();
     rows = await ideaButtons(idea, n, buttons.move);
   }
-  const text = formatIdeaReply(idea, duplicate, n.folders.get(idea.folder_id ?? ""), idea.project_id ? n.projects.get(idea.project_id) : null);
+  const text = formatIdeaReply(idea, duplicate, n.folders.get(idea.folder_id ?? ""), idea.project_id ? n.projects.get(idea.project_id) : n.projects.get(bestFit(idea.scoring?.projects)?.id ?? "") ?? null);
   const botMsgId = await sendMessage(chatId, text, { replyTo, buttons: rows });
   if (botMsgId) await db().from("ideas").update({ telegram_message_id: botMsgId }).eq("id", idea.id);
 }
@@ -231,7 +232,7 @@ export async function handleCallback(cb: TgCallback) {
     await setButtons(chatId, msgId, null);
     const { reanalyze } = await import("./ideas");
     const fresh = await reanalyze({ ...idea, project_id: next });
-    const text = formatIdeaReply(fresh, false, names.folders.get(fresh.folder_id ?? ""), next ? names.projects.get(next) : null);
+    const text = formatIdeaReply(fresh, false, names.folders.get(fresh.folder_id ?? ""), next ? names.projects.get(next) : names.projects.get(bestFit(fresh.scoring?.projects)?.id ?? "") ?? null);
     await editMessage(chatId, msgId, text, folderRows(p, token, names, { folder: fresh.folder_id, project: next }));
     return;
   }

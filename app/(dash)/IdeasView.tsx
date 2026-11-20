@@ -20,18 +20,20 @@ import { createFolder, deleteFolder, deleteIdea, moveIdeas, renameFolder, reorde
 import { AutoSelect, ConfirmButton, SubmitButton } from "./ConfirmButton";
 import { DesignCard, DesignDetail, DesignRow } from "./designUi";
 import { ideaInsights } from "@/lib/insights";
+import { axisLabels, bestFit } from "@/lib/scoring";
 import { BarRow, Delta, Kpi, KpiRow, SidePanel } from "./Insight";
 
 type ProjectName = { id: string; name: string };
 // 卡片上的分數標籤用：有指定專案就顯示專案名稱，沒有就顯示「相關」（對最相關專案的分數）
-const ProjectNames = createContext<Map<string, string>>(new Map());
 function useScoreLabel(i: Idea): string {
   const names = useContext(ProjectNames);
   const L = useL();
-  return (i.project_id && names.get(i.project_id)) || L("相關", "Fit");
+  // 沒指定專案：顯示 AI 評出來最適合的那個專案（新評分才有）
+  const best = i.project_id ? null : bestFit(i.scoring?.projects, null, [...names.keys()]);
+  return (i.project_id && names.get(i.project_id)) || (best && names.get(best.id)) || L("相關", "Fit");
 }
 import { IconGrid, IconSearch } from "./icons";
-import { ContextMenu, DetailPanel, ScoreBlock, FlagToggle, LayoutToggle, SourceButton, useFlagToggle, useLayout, type CardExtra, type FlagKey } from "./ideaUi";
+import { ContextMenu, DetailPanel, ProjectFits, ProjectNames, ScoreBlock, FlagToggle, LayoutToggle, SourceButton, useFlagToggle, useLayout, type CardExtra, type FlagKey } from "./ideaUi";
 import { useView } from "./Nav";
 
 const VIEWS = ["all", "week", "todo", "adopted", "brief"] as const;
@@ -1108,8 +1110,9 @@ export function IdeaDetail({ idea: i, picks }: { idea: Idea; picks?: React.React
       <DupNotice idea={i} />
 
       {i.score_total !== null && (
-        <ScoreBlock total={i.score_total} rows={[{ label: scoreLabel, n: i.score_arx }, { label: L("可行", "Feasible"), n: i.score_feasibility }, { label: L("市場", "Market"), n: i.score_market }]} />
+        <ScoreBlock total={i.score_total} rows={[{ label: scoreLabel, n: i.score_arx }, { label: axisLabels(i.scoring?.lens ?? null, lang).ease, n: i.score_feasibility }, { label: axisLabels(i.scoring?.lens ?? null, lang).value, n: i.score_market }]} />
       )}
+      <ProjectFits idea={i} />
       {i.next_step && (
         <div className="detail-next">
           <span className="kpi-label">{L("下一步", "Next step")}</span>

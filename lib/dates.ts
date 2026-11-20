@@ -13,6 +13,11 @@ export function taipeiWeekday(d: Date = new Date()): number {
   return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(w);
 }
 
+/** YYYY-MM-DD 加減幾天 */
+export function addDays(day: string, n: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
 /** 兩個 YYYY-MM-DD 相差幾天（to - from） */
 export function daysBetween(from: string, to: string): number {
   const a = Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10));

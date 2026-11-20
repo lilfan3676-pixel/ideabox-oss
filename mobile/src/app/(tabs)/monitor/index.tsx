@@ -1,10 +1,11 @@
 // 監控：主角是「全部正常／N 項異常」大卡；每個產品一張卡（服務燈號、三個數字＋近 30 天趨勢、資料庫用量）；最後是每週健檢
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import { Hero, soft } from "@/components/blocks";
+import { Animated, Pressable, Text, View } from "react-native";
+import { soft } from "@/components/blocks";
 import { Card, Dot, Empty, ErrorNote, Loading, Screen, Section } from "@/components/ui";
 import { ago } from "@/lib/format";
-import { useTheme, type Palette } from "@/lib/theme";
+import { useRise } from "@/lib/motion";
+import { halo, useTheme, type Palette } from "@/lib/theme";
 import type { Breakdown, MonitorData, MonitorDay, MonitorProductData } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 
@@ -34,17 +35,15 @@ export default function Monitor() {
 
       {!all.length ? (
         <Section><Empty text="還沒有監控任何東西。到網頁的「監控」頁加網址，每 5 分鐘會檢查一次。" /></Section>
-      ) : down.length ? (
-        <Hero
-          kicker="服務異常"
-          big={String(down.length)}
-          title="項連不上"
-          sub={down.map((s) => `${s.product}・${s.name}${s.since ? `（${ago(s.since)}開始）` : ""}`).join("\n")}
-          color={t.danger}
-          a11y={`${down.length} 項服務異常`}
-        />
       ) : (
-        <Hero kicker="服務狀態" title="全部正常" sub={`${checked.length} 項服務都連得上・每 5 分鐘檢查一次`} tone="soft" color={t.ok} />
+        <>
+          <Text style={{ fontSize: 22, fontWeight: "700", color: down.length ? t.warn : t.muted, marginHorizontal: 22, marginTop: 2 }}>
+            {down.length ? `${down.length} 項連不上` : `${checked.length} 項都正常`}
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginHorizontal: 12, marginTop: 14 }}>
+            {products.map((p, i) => <HaloTile key={p.key} p={p} i={data.products.indexOf(p)} wide={products.length % 2 === 1 && i === products.length - 1} />)}
+          </View>
+        </>
       )}
 
       {products.map((p) => <ProductCard key={p.key} p={p} t={t} />)}
@@ -52,6 +51,43 @@ export default function Monitor() {
       <HealthCard t={t} health={data.health} />
       <Text style={{ fontSize: 13, color: t.muted, marginHorizontal: 20, marginTop: 10, lineHeight: 18 }}>要新增或移除監控的網址，請到網頁的「監控」頁。</Text>
     </Screen>
+  );
+}
+
+/** 光環磚：產品名、最重要的一個數字（7 天活躍）、狀態；連不上時改顯示哪個服務壞了 */
+function HaloTile({ p, i, wide }: { p: MonitorProductData; i: number; wide: boolean }) {
+  const bad = p.services.filter((s) => s.ok === false);
+  const none = p.services.every((s) => !s.checked);
+  const latest = p.daily[p.daily.length - 1];
+  const big = latest?.active7 ?? latest?.users ?? null;
+  const label = latest?.active7 != null ? p.metrics?.active7 : p.metrics?.users;
+  const okCount = p.services.filter((s) => s.ok).length;
+  const rise = useRise(i * 70); // 一塊接一塊浮上來
+  return (
+    <Animated.View
+      accessibilityLabel={`${p.label}，${bad.length ? `${bad.map((s) => s.name).join("、")}連不上` : none ? "尚未檢查" : "正常"}`}
+      style={{ flexGrow: 1, flexBasis: wide ? "100%" : "48%", height: wide ? 120 : 190, borderRadius: 20, padding: 13, overflow: "hidden", backgroundColor: "#1a1a1c", experimental_backgroundImage: halo(i), ...rise }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: "#ffffff" }} numberOfLines={1}>{p.label}</Text>
+        {bad.length ? (
+          <View style={{ width: 12, height: 12, borderRadius: 3, backgroundColor: "#ffe14a", transform: [{ rotate: "45deg" }] }} />
+        ) : (
+          <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: none ? "rgba(255,255,255,0.5)" : "#9dffbf" }} />
+        )}
+      </View>
+      <Text style={{ fontSize: 12, color: "#ffffff", marginTop: 1 }} numberOfLines={1}>{bad.length ? `${bad[0].name}連不上` : label && big != null ? label : none ? "尚未檢查" : `${okCount} 項服務`}</Text>
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        {bad.length ? (
+          <Text style={{ fontSize: 26, fontWeight: "700", color: "#ffffff" }} numberOfLines={1}>連不上</Text>
+        ) : (
+          <Text style={{ fontSize: 42, fontWeight: "400", color: "#ffffff", fontVariant: ["tabular-nums"] }}>{big != null ? big.toLocaleString() : okCount}</Text>
+        )}
+      </View>
+      <Text style={{ fontSize: 12, color: "#ffffff" }} numberOfLines={1}>
+        {bad.length ? (bad[0].since ? `${ago(bad[0].since)}開始` : bad[0].error ?? "") : latest?.new7 != null && p.metrics ? `${p.metrics.new7} ${latest.new7}` : none ? "" : "正常"}
+      </Text>
+    </Animated.View>
   );
 }
 
