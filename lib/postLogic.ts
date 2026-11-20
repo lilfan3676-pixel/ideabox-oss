@@ -21,6 +21,50 @@ export const PLATFORM_NOTE: Record<Platform, [string, string]> = {
   line_oa: ["LINE 官方帳號的動態要在 LINE 後台發：時間到提醒你自己貼。", "LINE posts go out from the LINE console: you'll get a reminder and post it yourself."],
 };
 
+/** 貼文格式：一般貼文之外，短影片、輪播、限時動態各有自己的腳本寫法 */
+export const FORMATS = ["post", "reel", "carousel", "story"] as const;
+export type PostFormat = (typeof FORMATS)[number];
+export const isFormat = (s: unknown): s is PostFormat => typeof s === "string" && (FORMATS as readonly string[]).includes(s);
+export const FORMAT_LABEL: Record<PostFormat, [string, string]> = {
+  post: ["貼文", "Post"],
+  reel: ["Reel 短影片", "Reel"],
+  carousel: ["輪播", "Carousel"],
+  story: ["限時動態", "Story"],
+};
+export const FORMAT_SHORT: Record<PostFormat, [string, string]> = {
+  post: ["貼文", "Post"],
+  reel: ["Reel", "Reel"],
+  carousel: ["輪播", "Carousel"],
+  story: ["限動", "Story"],
+};
+/** 哪些平台有短影片／輪播／限動；其他平台只有一般貼文 */
+export function formatsFor(platform: Platform): PostFormat[] {
+  if (platform === "ig" || platform === "fb_page") return [...FORMATS];
+  if (platform === "line_oa") return ["post", "carousel"];
+  return ["post"];
+}
+export const formatOf = (p: { format?: string | null }): PostFormat => (isFormat(p.format) ? p.format : "post");
+
+/** 內容類型：一週裡要混著排，不連續兩則同一種（AI 排一週時用，也可以自己選） */
+export const KINDS = ["proof", "teach", "opinion", "story", "offer"] as const;
+export type PostKind = (typeof KINDS)[number];
+export const isKind = (s: unknown): s is PostKind => typeof s === "string" && (KINDS as readonly string[]).includes(s);
+export const KIND_LABEL: Record<PostKind, [string, string]> = {
+  proof: ["成果證明", "Proof"],
+  teach: ["教學", "Teach"],
+  opinion: ["觀點", "Opinion"],
+  story: ["故事", "Story"],
+  offer: ["介紹產品", "Offer"],
+};
+/** 每種類型在寫什麼（給 AI 排計畫、寫草稿時參考） */
+export const KIND_STYLE: Record<PostKind, string> = {
+  proof: "成果證明：真的發生的一件事，帶一個數字。",
+  teach: "教學：讀者今天就能照著做的一件事。",
+  opinion: "觀點：一個有人會不同意的立場，講清楚為什麼。",
+  story: "故事：一個有代價的場景（發生了什麼、付出什麼、後來怎樣）。",
+  offer: "介紹產品：直接講這是什麼、給誰用、怎麼開始，不用不好意思。",
+};
+
 export const POST_STATUSES = ["draft", "scheduled", "posted", "skipped"] as const;
 export type PostStatus = (typeof POST_STATUSES)[number];
 export const isPostStatus = (s: unknown): s is PostStatus => typeof s === "string" && (POST_STATUSES as readonly string[]).includes(s);
@@ -35,6 +79,13 @@ export type Post = {
   id: string;
   project_id: string;
   platform: Platform;
+  /** 還沒執行 migration-030 時沒有這個欄位，當作一般貼文 */
+  format?: PostFormat | null;
+  /** 內容類型（migration-031，可以是空的） */
+  kind?: PostKind | null;
+  /** 成效數字（migration-032）：觀看、觸及、分享…，見 lib/auditLogic.ts */
+  metrics?: Record<string, number> | null;
+  metrics_at?: string | null;
   target: string;
   due_at: string;
   topic: string;
@@ -71,6 +122,21 @@ export function whenText(iso: string): string {
   return `${+date.slice(5, 7)}/${+date.slice(8, 10)} ${time}`;
 }
 
+// ---------- 一週看板 ----------
+
+export function addDays(date: string, n: number): string {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** 這一天所在那週的星期一 */
+export function weekStart(date: string): string {
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay(); // 0＝週日
+  return addDays(date, dow === 0 ? -6 : 1 - dow);
+}
+
+/** 星期一到星期日的 7 個日期 */
+export const weekDays = (start: string): string[] => Array.from({ length: 7 }, (_, i) => addDays(start, i));
+
 // ---------- 平台 ----------
 
 /** 從「發在哪裡」猜平台：中山社團 → FB 社團、IG 限動 → IG… 猜不到就當 FB 社團 */
@@ -83,11 +149,18 @@ export function guessPlatform(target: string): Platform {
   return "fb_group";
 }
 
+/** 從「發在哪裡」猜格式：IG Reel → 短影片、IG 限動 → 限時動態、IG 輪播 → 輪播 */
+export function guessFormat(target: string, platform: Platform): PostFormat {
+  const t = target.toLowerCase();
+  const f: PostFormat = /reels?|短影片|短片/.test(t) ? "reel" : /限動|限時動態|stor(y|ies)/.test(t) ? "story" : /輪播|carousel|多圖/.test(t) ? "carousel" : "post";
+  return formatsFor(platform).includes(f) ? f : "post";
+}
+
 export const isUrl = (s: string) => /^https?:\/\/\S+$/i.test(s.trim());
 
 // ---------- Telegram 指令：「<短名> 發文 11/21 20:00 中山社團 主題」 ----------
 
-export type PostCommand = { date: string; time: string; target: string; topic: string; platform: Platform };
+export type PostCommand = { date: string; time: string; target: string; topic: string; platform: Platform; format: PostFormat };
 
 /** 解析「發文」後面的文字；格式不對回傳 null。日期沒寫年份：已經過了就當明年 */
 export function parsePostCommand(rest: string, today: string): PostCommand | null {
@@ -103,7 +176,8 @@ export function parsePostCommand(rest: string, today: string): PostCommand | nul
   const target = m[4].trim().slice(0, 200);
   const topic = (m[5] ?? "").trim().slice(0, 300);
   if (!topic) return null;
-  return { date, time, target, topic, platform: guessPlatform(target) };
+  const platform = guessPlatform(target);
+  return { date, time, target, topic, platform, format: guessFormat(target, platform) };
 }
 
 // ---------- 提醒 ----------
@@ -123,14 +197,14 @@ export function postponed(iso: string, days = 1): string {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** Telegram 提醒分兩則：第一則說明發在哪裡，第二則只有文案（長按就能整則複製） */
-export function reminderTexts(p: Pick<Post, "platform" | "target" | "due_at" | "topic" | "body">, projectName: string): { head: string; body: string } {
+export function reminderTexts(p: Pick<Post, "platform" | "target" | "due_at" | "topic" | "body"> & { format?: string | null }, projectName: string): { head: string; body: string } {
   const where = p.target ? (isUrl(p.target) ? `<a href="${esc(p.target.trim())}">${esc(p.target.trim())}</a>` : esc(p.target)) : "（沒填）";
   const head = [
-    `📣 <b>該發文了</b>｜${esc(projectName)}・${PLATFORM_LABEL[p.platform][0]}`,
+    `📣 <b>該發文了</b>｜${esc(projectName)}・${PLATFORM_LABEL[p.platform][0]}${formatOf(p) === "post" ? "" : `・${FORMAT_LABEL[formatOf(p)][0]}`}`,
     `發在：${where}`,
     `預定：${whenText(p.due_at)}${p.topic ? `｜${esc(p.topic)}` : ""}`,
     `ℹ️ ${PLATFORM_NOTE[p.platform][0]}`,
-    p.body.trim() ? "下一則是完整文案，長按就能複製。" : "⚠️ 這則還沒寫文案。",
+    p.body.trim() ? (formatOf(p) === "post" ? "下一則是完整文案，長按就能複製。" : "下一則是完整腳本，貼文說明在最後面。") : "⚠️ 這則還沒寫文案。",
   ].join("\n");
   return { head, body: esc(p.body.trim()) || "（還沒寫文案）" };
 }
@@ -179,3 +253,44 @@ export const HUMAN_RULES = [
   "只寫我給的事實，不要自己編數字、優惠、日期或功能，也不要編我的個人經歷或使用者的故事。",
   "直接輸出貼文內容，不要前言、不要解釋、不要加引號。",
 ].join("\n");
+
+// ---------- 短影片／輪播／限動的腳本 ----------
+
+/** 腳本裡「貼文說明」那一段的標題：這行以後才是要貼到平台上的文字，文案檢查只看這一段 */
+export const CAPTION_MARK = "【貼文說明】";
+
+/** 要貼到平台上的那段文字：一般貼文是整篇；腳本取「貼文說明」之後；限動沒有貼文說明 */
+export function captionOf(body: string, format: PostFormat): string {
+  if (format === "post") return body;
+  const i = body.lastIndexOf(CAPTION_MARK);
+  return i < 0 ? "" : body.slice(i + CAPTION_MARK.length).trim();
+}
+
+/** 各格式的腳本怎麼寫（給 AI 的規則）。一般貼文沿用 PLATFORM_STYLE */
+export const FORMAT_STYLE: Record<Exclude<PostFormat, "post">, string> = {
+  reel: [
+    "這是一支 20～40 秒短影片的腳本，不是貼文。照下面的段落輸出，段落標題用【】原樣保留：",
+    "【開頭三選一】三個不同寫法的第一句話，各一行、編號 1. 2. 3.。每句 15 個字以內、念出來 2 秒內講完，要具體（有數字、有人、有發生的事），不要「你知道嗎」「今天要來分享」這種開場。三句用不同角度：一句講代價或踩過的坑、一句講反直覺的觀點、一句直接講結果。我沒給的經歷、數字、別人說過的話都不要編；沒有素材就用產品本身的事實當開頭。",
+    "【口白】照第 1 個開頭接下去的完整口白，像在跟朋友講話，一句一行，每行念得順、不超過 20 個字。",
+    "【畫面字卡】3～5 張疊在畫面上的字，每張 10 個字以內，第一張就是開頭那句。",
+    "【分鏡】每行一段：「0–2 秒｜畫面｜說什麼」，第一段畫面要有人或有動作，不要靜態字卡開場。",
+    `${CAPTION_MARK}影片下面的說明文字：影片已經有開頭了，所以第一行直接講要觀眾做的一件事，再補 2～3 行背景。只能有一個行動（留言某個字、收藏、或私訊，選一個），不放連結，最後一行最多 3 個 hashtag。`,
+  ].join("\n"),
+  carousel: [
+    "這是一組 6～9 張的輪播圖文案，不是貼文。照下面的格式輸出，標題用【】原樣保留：",
+    "【第 1 張・封面】主標 12 個字以內（要讓人想往右滑），下面一行副標。",
+    "【第 2 張】一句話講為什麼這件事重要。這張要能單獨看懂，不能只是鋪陳。",
+    "【第 3 張】到【倒數第 3 張】一張一個重點：標題 4～10 個字，說明不超過 40 個字。需要一段話才講得完就拆成兩張。",
+    "【倒數第 2 張・整理】把前面的重點列成清單，這張是讓人截圖收藏的。",
+    "【最後一張】一個行動（收藏、留言某個字、或追蹤，選一個）。",
+    `${CAPTION_MARK}圖已經把內容講完了，說明文字的第一行是鉤子（跟封面不同的一句話），再 2～4 個短段落補充，結尾重複同一個行動。不放連結，最後一行最多 3 個 hashtag。`,
+  ].join("\n"),
+  story: [
+    "這是一天的限時動態，3～5 格，不是貼文。只有追蹤的人看得到，所以重點是讓人回覆，不是觸及。照下面的格式輸出：",
+    "【第 1 格】畫面（要有人臉或手在做事，不要純文字底圖）｜上面的字（15 個字以內）",
+    "【第 2 格】【第 3 格】真正的內容：過程、結果或踩到的坑。一格一件事。",
+    "【第 4 格】互動貼圖：寫清楚用哪一種（投票／問題箱／小測驗／連結）和上面的題目與選項。行動放這一格，不要放最後。",
+    "【第 5 格】收尾：答案、結果，或預告明天。",
+    "最後一行寫「回覆後怎麼做：」一句話說明有人回覆或投票後我該怎麼接。不要寫貼文說明、不要 hashtag。",
+  ].join("\n"),
+};

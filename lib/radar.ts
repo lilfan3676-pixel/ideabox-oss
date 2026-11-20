@@ -7,6 +7,7 @@ import { ingestText } from "./ideas";
 import { listProjects, logActivity, type Project } from "./projects";
 import { cleanSummary, painIdeaText, painsToSave, postsForPrompt, radarTelegram, toPosts, STALE_MS, type RadarPost, type RadarReport } from "./radarLogic";
 import { logRun } from "./sysLog";
+import { saveRadarSwipes } from "./swipes";
 import { sendToOwner } from "./telegram";
 
 // 話題雷達：用 Apify 的 Threads 搜尋工具抓關鍵字最近一週的熱門貼文 → AI 整理主題與痛點 → 存週報、挑好的痛點存成點子。
@@ -141,6 +142,7 @@ export async function runRadar(projects: Project[], opts: { notify: boolean; rep
           if (idea) ideaIds.push(idea.id);
         }
         await finish(j.reportId, { status: "done", post_count: posts.length, summary, idea_ids: ideaIds });
+        await saveRadarSwipes(j.p.id, posts).catch(() => 0); // 這週最熱門的幾篇存進社群助手的靈感庫
         await logActivity(j.p.id, `話題雷達：看了 ${posts.length} 篇，整理出 ${summary.pains.length} 個痛點${ideaIds.length ? `，存了 ${ideaIds.length} 個點子` : ""}`, "system").catch(() => {});
         if (opts.notify) await sendToOwner(radarTelegram(j.p.name, j.p.slug, summary, posts.length, ideaIds.length, env.appUrl()));
         await logRun("radar", true, j.p.slug, Date.now() - t0);

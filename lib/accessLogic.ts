@@ -66,9 +66,14 @@ export function navHrefs(a: Access): string[] | null {
   const out: string[] = [];
   if (can(a, "ideas")) out.push("/");
   if (can(a, "projects") || can(a, "calendar")) out.push("/projects");
+  if (can(a, "projects")) out.push("/social"); // 社群助手：看得到專案的人（只列他的專案）
   if (can(a, "grants")) out.push("/grants");
   if (can(a, "monitor")) out.push("/monitor");
-  for (const p of MODULE_MEMBER_PAGES) if (can(a, p.key)) out.push(p.href);
+  // 模組的頁面：href 可以帶 ?view=（同一頁的其中一個檢視），選單只看頁面本身
+  for (const p of MODULE_MEMBER_PAGES) {
+    const page = p.href.split("?")[0];
+    if (can(a, p.key) && !out.includes(page)) out.push(page);
+  }
   return out;
 }
 
@@ -133,6 +138,14 @@ export const MIN_PASSWORD = 8;
 export const byWho = (a: Access, text: string) => (a.owner ? text : `${a.name}：${text}`);
 
 /** 合夥人看得到的監控產品：對得到他專案短名的（產品的 key 或 slugs） */
+/** 模組頁面裡，合夥人看得到哪些檢視（頁面的檢視有各自勾選時才有；沒有就回傳 null＝這頁沒有分檢視的權限）。
+ *  def＝這頁預設的檢視（網址沒帶 ?view= 的那個） */
+export function memberViews(a: Access, page: string, def: string): string[] | null {
+  const mine = MODULE_MEMBER_PAGES.filter((p) => p.href.split("?")[0] === page);
+  if (!mine.some((p) => p.href.includes("?view="))) return null;
+  return mine.filter((p) => can(a, p.key)).map((p) => new URLSearchParams(p.href.split("?")[1] ?? "").get("view") ?? def);
+}
+
 export function productsFor<T extends { key: string; slugs?: string[] }>(a: Access, visibleSlugs: string[], products: T[]): T[] {
   if (a.owner) return products;
   return products.filter((p) => visibleSlugs.includes(p.key) || (p.slugs ?? []).some((s) => visibleSlugs.includes(s)));

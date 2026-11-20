@@ -8,7 +8,7 @@ import { LangSwitch } from "./LangSwitch";
 import { withViewTransition } from "./viewTransition";
 import { saveUiTheme } from "./actions";
 import { metaModules } from "@/lib/modules/meta";
-import { can, navHrefs, type Access } from "@/lib/accessLogic";
+import { can, memberViews, navHrefs, type Access } from "@/lib/accessLogic";
 import { useAccess } from "./AccessContext";
 import {
   IconAlert,
@@ -25,6 +25,11 @@ import {
   IconPalette,
   IconPhone,
   IconPulse,
+  IconMegaphone,
+  IconFlame,
+  IconChat,
+  IconTrend,
+  IconList,
   IconSparkle,
   IconSun,
   IconBulb,
@@ -37,6 +42,7 @@ import {
 const CORE_PAGES: Array<{ href: string; label: string; short?: string; hideSm?: boolean; icon?: React.ReactNode }> = [
   { href: "/", label: "點子庫", short: "點子", icon: <IconBulb /> },
   { href: "/projects", label: "專案", icon: <IconClipboard /> },
+  { href: "/social", label: "社群助手", short: "社群", icon: <IconMegaphone /> },
   { href: "/office", label: "辦公室", icon: <IconBox /> },
   { href: "/grants", label: "補助雷達", short: "補助", icon: <IconSparkle /> },
   { href: "/monitor", label: "監控", icon: <IconPulse /> },
@@ -58,6 +64,7 @@ const PAGES = (() => {
 const NAV_EN: Record<string, string> = {
   點子庫: "Ideas", 點子: "Ideas", 專案: "Projects", 辦公室: "Office", 整棟大樓: "Whole building", 全部專案: "All projects", 專案卡片: "Project cards", 月曆: "Calendar", 進行中: "Active", "暫停／完成": "Paused / done", 設計庫: "Design", 設計: "Design", 封測: "Beta", 補助雷達: "Grants", 補助: "Grants",
   監控: "Monitor", 成本: "Costs", 設定: "Settings",
+  社群助手: "Social", 社群: "Social", 一週看板: "Week board", 排程清單: "All posts", 靈感庫: "Swipe file", 成效: "Results", 互動: "Engage", 檔案健檢: "Profile check",
   待審核: "To review", 已核准: "Approved", 已同步: "Synced", 已淘汰: "Rejected",
   全部點子: "All ideas", 本週: "This week", 待補充: "Needs input", 已採用: "Adopted",
   全部設計: "All designs", 介面設計: "UI design", "GitHub 資源": "GitHub", 已選入簡報: "In brief",
@@ -202,6 +209,17 @@ const CORE_RAIL: Record<string, { def: string; items: RailItem[] }> = {
       { key: "calendar", label: "月曆", icon: <IconCalendar /> },
     ],
   },
+  "/social": {
+    def: "week",
+    items: [
+      { key: "week", label: "一週看板", icon: <IconCalendar /> },
+      { key: "posts", label: "排程清單", icon: <IconList /> },
+      { key: "audit", label: "成效", icon: <IconTrend /> },
+      { key: "swipes", label: "靈感庫", icon: <IconFlame /> },
+      { key: "engage", label: "互動", icon: <IconChat /> },
+      { key: "profile", label: "檔案健檢", icon: <IconUsers /> },
+    ],
+  },
   "/office": {
     def: "all",
     items: [{ key: "all", label: "整棟大樓", icon: <IconGrid /> }],
@@ -221,12 +239,14 @@ const CORE_RAIL: Record<string, { def: string; items: RailItem[] }> = {
 };
 
 // 模組的檢視：新頁面整組加入，既有頁面（例如 /monitor）接在後面
-const RAIL: Record<string, { def: string; items: RailItem[] }> = (() => {
-  const out = Object.fromEntries(Object.entries(CORE_RAIL).map(([k, v]) => [k, { ...v, items: [...v.items] }]));
+const RAIL: Record<string, { def: string; server?: boolean; items: RailItem[] }> = (() => {
+  const out: Record<string, { def: string; server?: boolean; items: RailItem[] }> = Object.fromEntries(Object.entries(CORE_RAIL).map(([k, v]) => [k, { ...v, items: [...v.items] }]));
   for (const [page, r] of metaModules.flatMap((m) => Object.entries(m.rails ?? {}))) {
     const items = r.items.map((it) => ({ key: it.key, label: it.label, icon: it.icon }));
-    if (out[page]) out[page].items.push(...items);
-    else out[page] = { def: r.def ?? items[0]?.key ?? "all", items };
+    if (out[page]) {
+      out[page].items.push(...items);
+      if (r.server) out[page].server = true;
+    } else out[page] = { def: r.def ?? items[0]?.key ?? "all", server: r.server, items };
   }
   return out;
 })();
@@ -239,9 +259,15 @@ export type RailProject = { id?: string; slug: string; name: string; color: stri
 /** 合夥人在專案頁只看得到有權限的檢視（卡片／月曆） */
 function railFor(page: string, a: Access) {
   const rail = RAIL[page] ?? { def: "all", items: [] };
-  if (a.owner || page === "/grants") return rail;
+  if (a.owner || page === "/grants" || page === "/social") return rail;
   // 點子庫：合夥人看的是簡單清單，沒有檢視可切；監控：只看「全部」（他看不到其他產品）
   if (page === "/") return { def: "all", items: [] };
+  // 模組頁面的檢視有各自勾選的：只留勾了的，預設是第一個
+  const views = memberViews(a, page, rail.def);
+  if (views) {
+    const items = rail.items.filter((it) => views.includes(it.key));
+    return { ...rail, def: items[0]?.key ?? rail.def, items };
+  }
   if (page !== "/projects") return { def: "all", items: rail.items.filter((it) => it.key === "all") };
   const items = rail.items.filter((it) => (it.key === "calendar" ? can(a, "calendar") : can(a, "projects")));
   return { def: items.some((it) => it.key === rail.def) ? rail.def : items[0]?.key ?? rail.def, items };
@@ -278,7 +304,9 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
               href={href}
               prefetch={false} // 同一頁切換不需要向伺服器預先載入
               onClick={(e) => {
-                if (!onBase) return; // 從其他頁過來時走一般換頁
+                // 從其他頁過來、或這頁的檢視要伺服器重新準備資料（模組的頁面可以這樣設定）時走一般換頁；
+                // 只改網址的話伺服器不會重給畫面，會變成「按了網址有變、畫面沒切」
+                if (!onBase || rail.server) return;
                 e.preventDefault();
                 if (!active) window.history.pushState(null, "", href);
               }}

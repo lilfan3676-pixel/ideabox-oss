@@ -66,7 +66,8 @@ export type TgDestination = {
 };
 
 /** 模組加在專案詳細頁的分頁：key 是網址上的 ?tab=，render 只有切到這個分頁時才會呼叫 */
-export type ProjectTab = { key: string; label: [string, string]; count?: number; render: () => Promise<React.ReactNode> };
+/** href＝這個分頁其實在別的頁面，點了直接過去（舊網址 ?tab=<key> 也會轉過去）；沒有 href 的要給 render */
+export type ProjectTab = { key: string; label: [string, string]; count?: number; href?: string; render?: () => Promise<React.ReactNode> };
 
 export type BellDef = {
   key: string;
@@ -111,7 +112,8 @@ export type MetaModule = {
   /** 左側頁面圖示列多出的頁面 */
   pages?: NavPage[];
   /** 頂部列的檢視切換：新頁面的檢視，或加到既有頁面（例如 /monitor）後面的檢視 */
-  rails?: Record<string, { def?: string; items: RailItem[] }>;
+  /** server：這頁的檢視要伺服器依網址重新準備資料（例如整個畫面不同），切換時走一般換頁，不只改網址 */
+  rails?: Record<string, { def?: string; server?: boolean; items: RailItem[] }>;
   /** 手機版底部分頁列最左邊的兩個分頁（沒有就用點子庫、專案） */
   mobileTabs?: { href: string; label: string; en: string; icon: React.ReactNode }[];
   /** 系統紀錄（sys_events.source）的名稱 */

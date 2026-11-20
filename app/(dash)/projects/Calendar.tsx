@@ -264,7 +264,7 @@ export function Calendar({
                   <span>
                     <b>{x.time}</b> {L(...PLATFORM_LABEL[x.platform])}・{L(...STATUS_LABEL[x.status])}
                     <br />
-                    {proj && <Link href={`/projects/${proj.slug}?tab=posts`}>{postTitle(x) || x.target || proj.name}</Link>}
+                    {proj && <Link href={`/social?p=${proj.slug}&view=posts`}>{postTitle(x) || x.target || proj.name}</Link>}
                     {x.target && <span className="muted small"> {x.target}</span>}
                   </span>
                 </li>

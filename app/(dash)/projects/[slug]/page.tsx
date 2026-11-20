@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requirePage } from "@/lib/auth";
 import { can, editsProject, seesProject } from "@/lib/accessLogic";
 import { taipeiDate } from "@/lib/dates";
@@ -9,12 +9,10 @@ import { listProjects, type Milestone, type ProjectLog } from "@/lib/projects";
 import { productForSlug } from "@/lib/monitorLogic";
 import { monitorProducts } from "@/lib/monitor";
 import { modules, projectTabs } from "@/lib/modules/registry";
-import { signedUrls } from "@/lib/images";
-import { draftEnabled, listPosts } from "@/lib/posts";
+import { listPosts } from "@/lib/posts";
 import { listRadarReports, radarEnabled } from "@/lib/radar";
 import { ProjectDetail, type ProductData } from "./ProjectDetail";
 import { ProjectTabs, type TabDef } from "./ProjectTabs";
-import { PostsTab } from "./PostsTab";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 「現在抓一次」話題雷達在背景跑
@@ -29,6 +27,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const project = projects[index];
   // 合夥人看不到的專案當作不存在
   if (!project || !seesProject(access, project.id)) notFound();
+  // 發文排程搬到社群助手了：舊網址（Telegram 訊息裡的連結）轉過去
+  if (tab === "posts") redirect(`/social?p=${project.slug}&view=posts`);
   const owner = access.owner;
   const color = Object.values(FOLDER_COLORS)[index % Object.values(FOLDER_COLORS).length];
   const now = Date.now();
@@ -60,21 +60,19 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     listPosts(project.id),
   ]);
 
-  // 分頁：總覽（原本的內容）、發文排程
+  // 分頁：總覽（原本的內容）、發文排程（在社群助手，這裡是捷徑）
   const tabDefs: TabDef[] = [
     { key: "", label: ["總覽", "Overview"] },
-    { key: "posts", label: ["發文排程", "Posts"], count: postList.posts.filter((x) => x.status === "draft" || x.status === "scheduled").length },
+    { key: "posts", href: `/social?p=${project.slug}`, label: ["發文排程", "Posts"], count: postList.posts.filter((x) => x.status === "draft" || x.status === "scheduled").length },
   ];
   // 模組加的分頁（例如某個專案專用的名單）
   const canEdit = editsProject(access, project.id);
   const extra = await projectTabs({ project, access, canEdit, today: taipeiDate() });
-  for (const t of extra) tabDefs.push({ key: t.key, label: t.label, count: t.count });
+  const moved = extra.find((t) => t.key === tab && t.href);
+  if (moved) redirect(moved.href!);
+  for (const t of extra) tabDefs.push({ key: t.key, label: t.label, count: t.count, href: t.href });
   const active = tabDefs.some((t) => t.key === tab) ? tab! : "";
-  let panel: React.ReactNode = extra.find((t) => t.key === active) ? await extra.find((t) => t.key === active)!.render() : undefined;
-  if (active === "posts") {
-    const images = await signedUrls(postList.posts.map((x) => x.image_path ?? "").filter(Boolean), 3600);
-    panel = <PostsTab projectId={project.id} posts={postList.posts} ready={postList.ready} images={images} canEdit={canEdit} aiEnabled={draftEnabled()} today={taipeiDate()} now={now} />;
-  }
+  const panel: React.ReactNode = await extra.find((t) => t.key === active)?.render?.();
 
   const product: ProductData = {
     info,

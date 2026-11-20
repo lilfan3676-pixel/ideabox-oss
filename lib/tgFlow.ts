@@ -292,6 +292,16 @@ export async function handleCallback(cb: TgCallback) {
     return;
   }
 
+  // 每晚進度確認：里程碑做了／延期、下一步做完了
+  if (data.startsWith("ck:")) {
+    const { handleCheckinButton } = await import("./checkin");
+    const r = await handleCheckinButton(data);
+    await answerCallback(cb.id, r.toast || undefined);
+    if (r.done) await setButtons(chatId, msgId, null);
+    if (r.text) await sendMessage(chatId, r.text, { replyTo: msgId });
+    return;
+  }
+
   await answerCallback(cb.id);
 }
 

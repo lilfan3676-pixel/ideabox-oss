@@ -126,7 +126,7 @@ describe("權限邏輯", () => {
 
   it("選單、首頁、App 分頁照權限", () => {
     expect(navHrefs(OWNER_ACCESS)).toBeNull();
-    expect(navHrefs(a)).toEqual(["/projects", "/monitor"]);
+    expect(navHrefs(a)).toEqual(["/projects", "/social", "/monitor"]); // 看得到專案的人也看得到社群助手
     expect(homeHref(a)).toBe("/projects");
     expect(homeHref(accessOf(member({ pages: ["calendar"] })))).toBe("/projects?view=calendar");
     expect(homeHref(accessOf(member({ pages: [] })))).toBe("/no-access");

@@ -94,6 +94,8 @@ create table if not exists public.project_posts (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects (id) on delete cascade,
   platform text not null default 'fb_group' check (platform in ('fb_group', 'fb_page', 'ig', 'dcard', 'line_oa')),
+  format text not null default 'post' check (format in ('post', 'reel', 'carousel', 'story')),  -- 一般貼文／短影片／輪播／限時動態
+  kind text check (kind in ('proof', 'teach', 'opinion', 'story', 'offer')),  -- 內容類型：成果證明／教學／觀點／故事／介紹產品
   target text not null default '',        -- 發在哪裡：社團名稱或連結
   due_at timestamptz not null,            -- 預定發文時間
   topic text not null default '',         -- 主題（給 AI 寫草稿用，也當清單上的標題）
@@ -107,10 +109,34 @@ create table if not exists public.project_posts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.project_posts add column if not exists format text not null default 'post';  -- 舊版升級用
+alter table public.project_posts add column if not exists kind text;  -- 舊版升級用
+alter table public.project_posts add column if not exists metrics jsonb;        -- 成效數字（觀看、觸及、分享…，自己填或貼截圖讓 AI 讀）
+alter table public.project_posts add column if not exists metrics_at timestamptz;
 create index if not exists project_posts_project_idx on public.project_posts (project_id, due_at);
 create index if not exists project_posts_due_idx on public.project_posts (due_at) where status = 'scheduled' and notified_at is null;
 
 alter table public.project_posts enable row level security;
+
+-- 爆款靈感庫：同領域爆紅貼文的開頭（自己貼的，或話題雷達每週自動存的熱門貼文）
+create table if not exists public.social_swipes (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects (id) on delete cascade,
+  account text not null default '',       -- 帳號
+  hook text not null,                     -- 開頭第一句（照原文）
+  url text,                               -- 貼文連結
+  views integer,                          -- 這則的觀看
+  median_views integer,                   -- 這個帳號平常的觀看（中位數）
+  likes integer,                          -- 讚數（話題雷達存的只有這個）
+  formula text not null default 'other',  -- 開頭公式（程式依規則歸類）
+  note text not null default '',
+  source text not null default 'manual' check (source in ('manual', 'radar')),
+  created_at timestamptz not null default now(),
+  unique (project_id, url)
+);
+create index if not exists social_swipes_project_idx on public.social_swipes (project_id, created_at desc);
+
+alter table public.social_swipes enable row level security;
 
 -- ========== 點子庫 ==========
 -- 資料夾（只有一層）。category 有值的是預設資料夾，AI 猜不到時用分類對應
