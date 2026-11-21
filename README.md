@@ -6,6 +6,17 @@
 
 技術：Next.js 16（App Router）＋ React 19 ＋ Supabase ＋ Vercel ＋ Claude API ＋ Telegram Bot，另有 Expo 手機 App（唯讀）。
 
+![ideabox 點子庫](docs/images/ideas.jpg)
+
+| 專案 | 社群助手 |
+|---|---|
+| ![專案](docs/images/projects.jpg) | ![社群助手](docs/images/social.jpg) |
+| **辦公室**（每個 Claude Code 是一個小人） | **深色模式** |
+| ![辦公室](docs/images/office.jpg) | ![深色模式](docs/images/office-dark.jpg) |
+
+<sub>截圖是示範資料。更多畫面見[使用說明](docs/使用說明.md)。</sub>
+
+
 > 這是給「自己一個人」用的工具：只有一個登入帳號、一個 Telegram 主人。每個人各自部署一份。
 >
 > 📖 **每個功能怎麼用：[使用說明](docs/使用說明.md)**

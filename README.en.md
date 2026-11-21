@@ -8,6 +8,17 @@ Stack: Next.js 16 (App Router) + React 19 + Supabase + Vercel + Claude API + Tel
 
 > Built for **one person**: one login, one Telegram owner. Everyone deploys their own copy. A detailed user guide (Traditional Chinese) is in [docs/使用說明.md](docs/使用說明.md). The UI is bilingual (Traditional Chinese / English); some AI prompts (e.g. the grant radar) focus on Taiwan.
 
+
+![ideabox idea library](docs/images/ideas.jpg)
+
+| Projects | Social assistant |
+|---|---|
+| ![Projects](docs/images/projects.jpg) | ![Social](docs/images/social.jpg) |
+| **Office** (each Claude Code session is a pixel worker) | **Dark mode** |
+| ![Office](docs/images/office.jpg) | ![Dark mode](docs/images/office-dark.jpg) |
+
+<sub>Screenshots use demo data (the UI is shown in Traditional Chinese; English is available in settings).</sub>
+
 ---
 
 ## Features
