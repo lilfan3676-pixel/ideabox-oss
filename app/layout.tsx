@@ -28,12 +28,12 @@ export async function generateMetadata(): Promise<Metadata> {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 // 在畫面繪製前套用上次選的主題，避免閃一下預設色
-const THEME_INIT = `(function(){var d=document.documentElement;try{d.dataset.theme=localStorage.getItem('ib-theme')||'fluento';d.dataset.mode=localStorage.getItem('ib-mode')||'light';}catch(e){d.dataset.theme='fluento';d.dataset.mode='light';}})();`;
+const THEME_INIT = `(function(){var d=document.documentElement;try{d.dataset.theme=localStorage.getItem('ib-theme')||'mono';d.dataset.mode=localStorage.getItem('ib-mode')||'light';}catch(e){d.dataset.theme='mono';d.dataset.mode='light';}})();`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const lang = await getLang();
   return (
-    <html lang={lang === "en" ? "en" : "zh-Hant"} data-theme="fluento" data-mode="light" suppressHydrationWarning>
+    <html lang={lang === "en" ? "en" : "zh-Hant"} data-theme="mono" data-mode="light" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
       </head>
