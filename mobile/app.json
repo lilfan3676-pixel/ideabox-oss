@@ -2,7 +2,7 @@
   "expo": {
     "name": "ideabox",
     "slug": "ideabox",
-    "version": "2.1.1",
+    "version": "2.1.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "ideabox",
@@ -22,7 +22,7 @@
     "android": {
       "package": "com.example.ideabox",
       "adaptiveIcon": {
-        "backgroundColor": "#000000",
+        "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "permissions": [
