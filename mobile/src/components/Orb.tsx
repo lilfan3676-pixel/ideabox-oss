@@ -30,9 +30,11 @@ export function Orb({ size, mood = "calm", shadow = true, still, style, label }:
         Animated.timing(breath, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ]),
     );
+    // 每顆眨眼的間隔不一樣，一排小球才不會同時眨
+    const pause = 2800 + Math.round(Math.random() * 2400);
     const b = Animated.loop(
       Animated.sequence([
-        Animated.delay(3400),
+        Animated.delay(pause),
         Animated.timing(blink, { toValue: 0.1, duration: 90, useNativeDriver: true }),
         Animated.timing(blink, { toValue: 1, duration: 130, useNativeDriver: true }),
       ]),

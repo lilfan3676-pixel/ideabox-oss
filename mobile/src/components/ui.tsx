@@ -1,9 +1,10 @@
 // 共用畫面元件（黑白版）：圓體細字、靠左、一頁一個大字，清單是細線分隔的列，不用白卡片堆疊
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, Text, View, type StyleProp, type TextProps, type TextStyle, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { L } from "@/lib/i18n";
 import { usePrefs } from "@/lib/prefs";
+import { balance } from "@/lib/wrap";
 import { FONT, PROJECT_COLORS, useTheme } from "@/lib/theme";
 import { Icon, type IconName } from "./Icon";
 
@@ -28,12 +29,19 @@ export function Txt({ size = 16, lh, color, muted, tab, style, ...rest }: TextPr
   return <Text {...rest} style={[{ fontFamily: FONT, fontSize: size, lineHeight: lh ?? Math.round(size * 1.4), color: color ?? (muted ? t.muted : t.ink) }, tab && { fontVariant: ["tabular-nums"] }, style]} />;
 }
 
-/** 每頁唯一的大字：長體（壓窄到 88%），靠左 */
+/** 每頁唯一的大字：長體（壓窄到 88%），靠左。
+ *  壓窄以後字只佔原本寬度的 88%，所以排版的寬度要放大回來，右邊才不會空一截就換行；
+ *  要排兩行時用 balance 自己挑斷點，兩行差不多長、不留孤字。 */
+const SLIM = 0.88;
 export function Big({ children, lines = 2, size = 40, fit = true, style }: { children: ReactNode; lines?: number; size?: number; fit?: boolean; style?: StyleProp<TextStyle> }) {
+  const [w, setW] = useState(0);
+  const text = typeof children === "string" && w > 0 && lines > 1 ? balance(children, w / SLIM / size - 0.2) : children;
   return (
-    <Txt accessibilityRole="header" size={size} lh={Math.round(size * 1.2)} numberOfLines={lines} adjustsFontSizeToFit={fit} minimumFontScale={0.7} style={[{ transform: [{ scaleX: 0.88 }], transformOrigin: "left center" }, style]}>
-      {children}
-    </Txt>
+    <View onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+      <Txt accessibilityRole="header" size={size} lh={Math.round(size * 1.2)} numberOfLines={lines} adjustsFontSizeToFit={fit} minimumFontScale={0.7} style={[{ width: `${100 / SLIM}%`, transform: [{ scaleX: SLIM }], transformOrigin: "left center" }, style]}>
+        {text}
+      </Txt>
+    </View>
   );
 }
 

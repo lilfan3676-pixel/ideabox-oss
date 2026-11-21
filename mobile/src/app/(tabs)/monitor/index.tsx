@@ -1,11 +1,14 @@
-// 監控：大字只講最要緊的那一件（哪個連不上，或都正常），下面一個產品一列；點一列才展開細節
+// 監控：大字講一個產品的狀況（有連不上的排最前面），左右滑換下一個產品；
+// 下面一個產品一列，兩條小眼睛標出現在看的那個，點一列展開細節（有展開、收起的動畫）
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { Animated, LayoutAnimation, Pressable, View } from "react-native";
 import { Icon } from "@/components/Icon";
 import { Orb } from "@/components/Orb";
-import { Big, Dot, Empty, ErrorNote, Head, Label, Line, Loading, Page, Small, Txt } from "@/components/ui";
+import { Big, Dot, Empty, ErrorNote, Head, Label, Line, Loading, Page, Sig, Small, Txt } from "@/components/ui";
 import { ago } from "@/lib/format";
 import { L } from "@/lib/i18n";
+import { reduceMotion } from "@/lib/motion";
+import { useSwipe } from "@/lib/swipe";
 import { useTheme, type Palette } from "@/lib/theme";
 import type { Breakdown, MonitorData, MonitorProductData } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
@@ -20,32 +23,44 @@ export default function Monitor() {
   const t = useTheme();
   const { data, error, loading, refreshing, refresh } = useApi<MonitorData>("/api/app/monitor", { pollMs: 60_000 });
   const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null); // 滑到哪個產品（key）
+  // 有連不上的排最前面
+  const products = [...(data?.products ?? [])].sort((a, b) => Number(b.services.some((s) => s.ok === false)) - Number(a.services.some((s) => s.ok === false)));
+  const index = Math.max(0, products.findIndex((p) => p.key === picked));
+  const swipe = useSwipe(products.length, index, (i) => setPicked(products[i]?.key ?? null));
   if (loading && !data) return <Loading />;
   if (!data) return <Page onRefresh={refresh}><Head title={L("監控", "Monitor")} />{error ? <ErrorNote text={error} onRetry={refresh} /> : null}</Page>;
 
-  const all = data.products.flatMap((p) => p.services.map((s) => ({ ...s, product: p.label })));
-  const down = all.filter((s) => s.ok === false);
-  const checked = all.filter((s) => s.checked);
-  const products = [...data.products].sort((a, b) => Number(b.services.some((s) => s.ok === false)) - Number(a.services.some((s) => s.ok === false)));
-  const first = down[0];
+  const down = data.products.flatMap((p) => p.services).filter((s) => s.ok === false);
+  const cur = products[index];
+  const curBad = cur?.services.filter((s) => s.ok === false) ?? [];
+  const curLatest = cur?.daily[cur.daily.length - 1];
+  const curNum = curLatest?.active7 ?? curLatest?.users ?? null;
+  /** 展開、收起：高度用動畫長出來、收回去 */
+  const toggle = (key: string) => {
+    if (!reduceMotion()) LayoutAnimation.configureNext({ duration: 260, create: { type: "easeInEaseOut", property: "opacity" }, update: { type: "spring", springDamping: 0.9 }, delete: { type: "easeInEaseOut", property: "opacity", duration: 120 } });
+    setOpen((o) => (o === key ? null : key));
+  };
 
   return (
     <Page refreshing={refreshing} onRefresh={refresh}>
-      <Head title={L("監控", "Monitor")} pad={112} right={<Txt size={14} lh={20} muted tab>{L("每 5 分鐘檢查", "Every 5 min")}</Txt>} />
-      <Orb size={160} mood={down.length ? "worried" : "calm"} style={{ position: "absolute", right: -44, top: 92 }} />
+      <View {...swipe.handlers}>
+      <Head title={L("監控", "Monitor")} pad={112} right={<Txt size={14} lh={20} muted tab>{down.length ? L(`${down.length} 項異常`, `${down.length} down`) : L("每 5 分鐘檢查", "Every 5 min")}</Txt>} />
+      <Orb size={160} mood={curBad.length ? "worried" : "calm"} style={{ position: "absolute", right: -44, top: 20 }} />
       {error ? <ErrorNote text={error} onRetry={refresh} /> : null}
       {!data.ready ? <ErrorNote text={L("監控還沒啟用：ideabox 的資料庫要先執行 migration-004。", "Monitoring isn't on yet: run migration-004 first.")} /> : null}
 
-      <View style={{ marginTop: 40, marginRight: 100 }}>
-        {first ? (
+      <Animated.View style={[{ marginTop: 40, marginRight: 100, minHeight: 128 }, swipe.style]} accessibilityHint={L("左右滑換下一個產品", "Swipe sideways for the next product")}>
+        {cur ? (
           <>
-            <Big lines={3}>{`${first.product}\n${L(`${first.name}連不上`, `${first.name} is down`)}`}</Big>
-            <Txt muted tab style={{ marginTop: 8 }}>{first.since ? L(`${ago(first.since)}開始`, `since ${ago(first.since)}`) : first.error ?? ""}{down.length > 1 ? L(`，另外還有 ${down.length - 1} 項`, `, +${down.length - 1} more`) : ""}</Txt>
-          </>
-        ) : all.length ? (
-          <>
-            <Big>{L("都正常", "All good")}</Big>
-            <Txt muted tab style={{ marginTop: 8 }}>{L(`${checked.length} 項服務`, `${checked.length} services`)}</Txt>
+            <Big lines={2}>{`${cur.label}\n${curBad.length ? L(`${curBad[0].name}連不上`, `${curBad[0].name} is down`) : cur.services.every((s) => !s.checked) ? L("還沒檢查", "Not checked") : L("正常", "All good")}`}</Big>
+            <Txt muted tab style={{ marginTop: 8 }} numberOfLines={1}>
+              {curBad.length
+                ? `${curBad[0].since ? L(`${ago(curBad[0].since)}開始`, `since ${ago(curBad[0].since)}`) : curBad[0].error ?? ""}${curBad.length > 1 ? L(`，另外還有 ${curBad.length - 1} 項`, `, +${curBad.length - 1} more`) : ""}`
+                : curNum != null && cur.metrics
+                  ? `${curLatest?.active7 != null ? cur.metrics.active7 : cur.metrics.users} ${curNum.toLocaleString()}`
+                  : L(`${cur.services.length} 項服務`, `${cur.services.length} services`)}
+            </Txt>
           </>
         ) : (
           <>
@@ -53,7 +68,7 @@ export default function Monitor() {
             <Txt muted style={{ marginTop: 8 }}>{L("到網頁的監控頁加網址", "Add an address on the web Monitor page")}</Txt>
           </>
         )}
-      </View>
+      </Animated.View>
 
       <View style={{ marginTop: 32 }}>
         {products.map((p, i) => {
@@ -64,9 +79,10 @@ export default function Monitor() {
           const on = open === p.key;
           return (
             <View key={p.key}>
-              <Line last={i === products.length - 1 && !on} onPress={() => setOpen(on ? null : p.key)} label={`${p.label}，${bad.length ? L(`${bad.length} 項異常`, `${bad.length} down`) : none ? L("還沒檢查", "not checked") : L("正常", "OK")}`}>
+              <Line last={i === products.length - 1 && !on} onPress={() => { setPicked(p.key); toggle(p.key); }} label={`${p.label}，${bad.length ? L(`${bad.length} 項異常`, `${bad.length} down`) : none ? L("還沒檢查", "not checked") : L("正常", "OK")}`}>
                 <Dot color={bad.length ? t.bad : none ? t.track : t.ok} size={6} />
                 <Txt style={{ flex: 1 }} numberOfLines={1}>{p.label}</Txt>
+                {i === index ? <Sig label={L("現在看的這個", "Showing now")} /> : null}
                 {bad.length ? (
                   <Small icon="warn" color={t.badText}>{L(`${bad.length} 項`, `${bad.length}`)}</Small>
                 ) : big != null ? (
@@ -81,6 +97,8 @@ export default function Monitor() {
             </View>
           );
         })}
+      </View>
+
       </View>
 
       <Label icon="check">{data.health ? L(`每週健檢　${ago(data.health.at)}`, `Weekly check  ${ago(data.health.at)}`) : L("每週健檢", "Weekly check")}</Label>
