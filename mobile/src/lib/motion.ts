@@ -15,6 +15,14 @@ AccessibilityInfo.addEventListener("reduceMotionChanged", (v) => {
 export const reduceMotion = () => reduce;
 
 export const SPRING = { useNativeDriver: true, damping: 17, stiffness: 190, mass: 0.9 } as const;
+/** 跟手的東西放手後用的彈簧：比 SPRING 緊，很快到位、只晃一點點（翻頁、拉出來的清單） */
+export const SNAP = { useNativeDriver: true, damping: 28, stiffness: 300, mass: 1 } as const;
+
+/** 讓一個值彈到定位；開了「減少動態效果」就直接到位 */
+export function glide(v: Animated.Value, toValue: number) {
+  if (reduce) v.setValue(toValue);
+  else Animated.spring(v, { toValue, ...SNAP }).start();
+}
 
 /** 開關一個浮出來的東西：打開用彈簧、關掉快一點；關的動畫跑完才真的拿掉（mounted） */
 export function usePresence(open: boolean) {

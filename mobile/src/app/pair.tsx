@@ -5,13 +5,15 @@ import * as Linking from "expo-linking";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Icon } from "@/components/Icon";
+import { LOGO, LOGO_INV } from "@/components/Menu";
+import { Big, ErrorNote, Txt } from "@/components/ui";
+import { L } from "@/lib/i18n";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Backdrop } from "@/components/ui";
-import { useStyles, useTheme, type Palette } from "@/lib/theme";
+import { FONT, useStyles, useTheme, type Palette } from "@/lib/theme";
 import { ApiError, pair } from "@/lib/api";
 import { cleanServer } from "@/lib/session";
 
-const LOGO = require("../../assets/logo-444.png");
 const DEFAULT_SERVER = "";
 
 type Mode = "home" | "scan" | "manual";
@@ -52,7 +54,7 @@ export default function Pair() {
       router.replace("/");
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setError(e instanceof ApiError ? e.message : "配對失敗，請再試一次。");
+      setError(e instanceof ApiError ? e.message : L("配對失敗，請再試一次。", "Pairing failed. Try again."));
       scanned.current = false;
       setMode((m) => (m === "scan" ? "home" : m));
     } finally {
@@ -70,7 +72,7 @@ export default function Pair() {
     setError(null);
     const p = perm?.granted ? perm : await requestPerm();
     if (!p.granted) {
-      setError("沒有相機權限，可以改用「手動輸入」。");
+      setError(L("沒有相機權限，可以改用手動輸入。", "No camera access. Enter the code by hand instead."));
       return;
     }
     scanned.current = false;
@@ -93,96 +95,69 @@ export default function Pair() {
           }}
         />
         <View style={[st.scanTop, { paddingTop: insets.top + 12 }]}>
-          <Text style={st.scanText}>對準 ideabox 設定頁上的 QR code</Text>
+          <Text style={st.scanText}>{L("對準 ideabox 設定頁上的 QR code", "Point at the QR code in ideabox settings")}</Text>
         </View>
         <View style={st.frame} pointerEvents="none" />
         <View style={[st.scanBottom, { paddingBottom: insets.bottom + 20 }]}>
           {busy ? <ActivityIndicator color="white" /> : null}
           <Pressable onPress={() => setMode("home")} style={st.scanCancel}>
-            <Text style={{ color: "white", fontSize: 17, fontWeight: "600" }}>取消</Text>
+            <Text style={{ color: "white", fontSize: 17, fontFamily: FONT }}>{L("取消", "Cancel")}</Text>
           </Pressable>
         </View>
       </View>
     );
   }
 
-  return (
-    <View style={{ flex: 1, backgroundColor: t.bgA }}>
-      <Backdrop />
-      <ScrollView
-        contentContainerStyle={[st.wrap, { paddingTop: insets.top + 56, paddingBottom: insets.bottom + 24 }]}
-        keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets
-        contentInsetAdjustmentBehavior="never"
-      >
-        {/* 標誌後面一圈冷光（跟今天頁晚上的月亮一樣） */}
-        <View style={{ alignItems: "center", marginTop: mode === "home" ? 60 : 0 }}>
-          {mode === "home" ? (
-            <View style={{ width: 300, height: 300, alignItems: "center", justifyContent: "center", experimental_backgroundImage: "radial-gradient(circle, rgba(120,140,190,0.34) 0%, rgba(120,140,190,0) 68%)" }}>
-              <Image source={LOGO} accessibilityLabel="ideabox 標誌" style={{ width: 148, height: 148, borderRadius: 74, borderWidth: 2, borderColor: "rgba(255,255,255,0.85)" }} />
-            </View>
-          ) : null}
-          <Text accessibilityRole="header" style={st.logo}>連上你的 ideabox</Text>
-          <Text style={st.lead}>在電腦打開 ideabox 網頁的「設定 → 手機 App」，掃上面的 QR code。</Text>
-        </View>
+  const input = { height: 52, borderRadius: 16, borderWidth: 1, borderColor: t.line, backgroundColor: t.card, paddingHorizontal: 16, fontSize: 17, color: t.ink, fontFamily: FONT } as const;
+  const primary = (label: string, icon: "scan" | "key" | "link", onPress: () => void, off?: boolean) => (
+    <Pressable onPress={onPress} disabled={off || busy} accessibilityRole="button" style={({ pressed }) => ({ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 10, height: 52, paddingHorizontal: 24, borderRadius: 26, backgroundColor: t.ink, opacity: off ? 0.4 : pressed ? 0.7 : 1 })}>
+      {busy ? <ActivityIndicator color={t.bg} /> : <Icon name={icon} size={18} color={t.bg} />}
+      <Txt color={t.bg}>{label}</Txt>
+    </Pressable>
+  );
+  const secondary = (label: string, onPress: () => void) => (
+    <Pressable onPress={onPress} disabled={busy} accessibilityRole="button" hitSlop={8} style={{ alignSelf: "flex-start", height: 44, justifyContent: "center" }}>
+      <Txt size={15} style={{ textDecorationLine: "underline" }}>{label}</Txt>
+    </Pressable>
+  );
 
-        {error ? <Text style={[st.error, { textAlign: "center" }]}>{error}</Text> : null}
+  return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 28, paddingTop: insets.top + 72, paddingBottom: insets.bottom + 24, flexGrow: 1 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="never" showsVerticalScrollIndicator={false}>
+        {/* 這頁沒有小球：標誌就是它 */}
+        <Image source={t.dark ? LOGO_INV : LOGO} accessibilityLabel={L("ideabox 標誌", "ideabox logo")} style={{ width: 72, height: 72 }} />
+        <View style={{ marginTop: 48 }}><Big>{L("先跟電腦配對", "Pair with your computer")}</Big></View>
+        <Txt muted lh={24} style={{ marginTop: 12, maxWidth: 290 }}>{L("在電腦打開 ideabox 的設定，選「手機 App」，用相機掃畫面上的 QR code", "Open ideabox settings on your computer, choose Mobile app, and scan the QR code on screen")}</Txt>
+        {error ? <ErrorNote text={error} /> : null}
 
         {mode === "home" ? (
-          <View style={{ gap: 12, marginTop: 28, flexGrow: 1, justifyContent: "flex-end" }}>
-            <Pressable style={st.primary} onPress={startScan} disabled={busy}>
-              {busy ? <ActivityIndicator color={t.inkText} /> : <Text style={st.primaryText}>掃 QR code 配對</Text>}
-            </Pressable>
-            <Pressable style={st.secondary} onPress={() => { setError(null); setMode("manual"); }} disabled={busy}>
-              <Text style={st.secondaryText}>手動輸入配對碼</Text>
-            </Pressable>
+          <View style={{ gap: 8, marginTop: 40 }}>
+            {primary(L("打開相機", "Open camera"), "scan", startScan)}
+            {secondary(L("手動輸入配對碼", "Enter the code by hand"), () => { setError(null); setMode("manual"); })}
           </View>
         ) : (
-          <View style={{ gap: 10, marginTop: 28 }}>
-            <Text style={st.label}>ideabox 網址</Text>
-            <TextInput style={st.input} value={server} onChangeText={setServer} autoCapitalize="none" autoCorrect={false} keyboardType="url" textContentType="URL" placeholder={DEFAULT_SERVER || "https://my-ideabox.vercel.app"} placeholderTextColor={t.faint} />
-            <Text style={st.label}>配對碼（網頁上顯示的 8 個字）</Text>
-            <TextInput
-              style={[st.input, st.code]}
-              value={code}
-              onChangeText={(t) => setCode(t.toUpperCase())}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              placeholder="ABCD-EFGH"
-              placeholderTextColor={t.faint}
-              maxLength={12}
-              returnKeyType="go"
-              onSubmitEditing={() => submit(server, code)}
-              autoFocus
-            />
-            <Pressable style={[st.primary, { marginTop: 8 }, (!code.trim() || busy) && { opacity: 0.5 }]} disabled={!code.trim() || busy} onPress={() => submit(server, code)}>
-              {busy ? <ActivityIndicator color={t.inkText} /> : <Text style={st.primaryText}>配對</Text>}
-            </Pressable>
-            <Pressable style={st.secondary} onPress={() => setMode("home")} disabled={busy}>
-              <Text style={st.secondaryText}>返回</Text>
-            </Pressable>
+          <View style={{ gap: 8, marginTop: 32 }}>
+            <Txt size={14} muted>{L("ideabox 網址", "ideabox address")}</Txt>
+            <TextInput style={input} value={server} onChangeText={setServer} autoCapitalize="none" autoCorrect={false} keyboardType="url" textContentType="URL" placeholder={DEFAULT_SERVER} placeholderTextColor={t.muted} />
+            <Txt size={14} muted style={{ marginTop: 8 }}>{L("配對碼（網頁上顯示的 8 個字）", "Pairing code (8 characters shown on the web)")}</Txt>
+            <TextInput style={[input, { fontSize: 22, letterSpacing: 4, fontVariant: ["tabular-nums"] }]} value={code} onChangeText={(v) => setCode(v.toUpperCase())} autoCapitalize="characters" autoCorrect={false} placeholder="ABCD-EFGH" placeholderTextColor={t.muted} maxLength={12} returnKeyType="go" onSubmitEditing={() => submit(server, code)} autoFocus />
+            <View style={{ marginTop: 16, gap: 8 }}>
+              {primary(L("配對", "Pair"), "key", () => submit(server, code), !code.trim())}
+              {secondary(L("返回", "Back"), () => setMode("home"))}
+            </View>
           </View>
         )}
+        <View style={{ flex: 1, minHeight: 24 }} />
+        <Txt size={13} muted>{L("只有你自己的手機能配對", "Only your own phone can pair")}</Txt>
       </ScrollView>
     </View>
   );
 }
 
-const make = (t: Palette) => StyleSheet.create({
-  wrap: { paddingHorizontal: 24, flexGrow: 1 },
-  logo: { fontSize: 27, fontWeight: "700", color: t.text, textAlign: "center", marginTop: 8 },
-  lead: { fontSize: 15, lineHeight: 24, color: t.muted, marginTop: 10, textAlign: "center", paddingHorizontal: 12 },
-  error: { fontSize: 15, lineHeight: 21, color: t.danger, marginTop: 18 },
-  primary: { height: 56, borderRadius: 28, backgroundColor: t.ink, alignItems: "center", justifyContent: "center", boxShadow: t.name === "portal" ? t.shadow : undefined },
-  primaryText: { color: t.inkText, fontSize: 17, fontWeight: "700" },
-  secondary: { height: 52, borderRadius: 26, backgroundColor: "#0c0c0d", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", alignItems: "center", justifyContent: "center" },
-  secondaryText: { color: t.text, fontSize: 17, fontWeight: "700" },
-  label: { fontSize: 13, color: t.muted, marginTop: 6, marginLeft: 4 },
-  input: { height: 50, borderRadius: t.name === "portal" ? 0 : 12, borderWidth: t.borderWidth, borderColor: t.border, backgroundColor: t.field, paddingHorizontal: 14, fontSize: 17, color: t.text },
-  code: { fontSize: 22, letterSpacing: 4, fontVariant: ["tabular-nums"], fontWeight: "600" },
+const make = (_t: Palette) => StyleSheet.create({
   scanTop: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", paddingBottom: 14, backgroundColor: "rgba(0,0,0,0.45)" },
-  scanText: { color: "white", fontSize: 17, fontWeight: "600" },
-  frame: { position: "absolute", alignSelf: "center", top: "30%", width: 240, height: 240, borderRadius: 24, borderWidth: 3, borderColor: "rgba(255,255,255,0.85)" },
+  scanText: { color: "white", fontSize: 17, fontFamily: FONT },
+  frame: { position: "absolute", alignSelf: "center", top: "30%", width: 240, height: 240, borderRadius: 24, borderWidth: 2, borderColor: "rgba(255,255,255,0.85)" },
   scanBottom: { position: "absolute", bottom: 0, left: 0, right: 0, alignItems: "center", gap: 16 },
   scanCancel: { paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24, backgroundColor: "rgba(255,255,255,0.2)" },
 });

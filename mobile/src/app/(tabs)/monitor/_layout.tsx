@@ -1,10 +1,6 @@
 import { Stack } from "expo-router";
-import { useStackOptions } from "@/components/ui";
 
+// 每頁自己畫標題，不用原生標題列
 export default function Layout() {
-  return (
-    <Stack screenOptions={useStackOptions()}>
-      <Stack.Screen name="index" options={{ title: "監控" }} />
-    </Stack>
-  );
+  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "transparent" } }} />;
 }

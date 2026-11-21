@@ -2,18 +2,19 @@
   "expo": {
     "name": "ideabox",
     "slug": "ideabox",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "ideabox",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.example.ideabox",
       "supportsTablet": false,
       "infoPlist": {
         "CFBundleDevelopmentRegion": "zh_TW",
         "CFBundleLocalizations": [
-          "zh_TW"
+          "zh_TW",
+          "en"
         ],
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -46,13 +47,16 @@
         }
       ],
       "expo-font",
-      "expo-video",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 220,
-          "backgroundColor": "#000000"
+          "image": "./assets/logo-ball.png",
+          "imageWidth": 140,
+          "backgroundColor": "#ffffff",
+          "dark": {
+            "image": "./assets/logo-ball-inv.png",
+            "backgroundColor": "#000000"
+          }
         }
       ]
     ],
@@ -63,6 +67,6 @@
       "router": {},
       "eas": {}
     },
-    "backgroundColor": "#000000"
+    "backgroundColor": "#ffffff"
   }
 }

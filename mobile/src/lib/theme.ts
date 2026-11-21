@@ -1,83 +1,55 @@
-// 外觀：App 2.0 固定一套黑底配色（NOIR），不再跟網頁主題走、也沒有主題選項
+// 外觀：照 ideabox 網頁的黑白主題（globals.css 的 [data-theme="mono"]）。
+// 純白或純黑底、主色只有黑白，專案顏色與狀態的綠紅照舊；深淺色預設跟手機，設定頁可以自己選。
 import { useMemo } from "react";
-
-export type ThemeName = "fluento" | "ember" | "portal";
-export type Mode = "light" | "dark";
+import { useColorScheme } from "react-native";
+import { usePrefs } from "./prefs";
 
 export type Palette = {
-  name: ThemeName;
-  mode: Mode;
   dark: boolean;
-  /** 背景三段漸層＋兩團光暈（跟網頁 .app-bg 一樣） */
-  bgA: string;
-  bgB: string;
-  bgC: string;
-  blob1: string;
-  blob2: string;
-  /** 卡片（網頁的 .glass） */
-  card: string;
-  cardPressed: string;
-  border: string;
-  borderWidth: number;
-  radius: number;
-  /** 小元件（標籤、按鈕）的圓角 */
-  radiusSm: number;
-  shadow: string;
-  text: string;
-  muted: string;
-  faint: string;
-  sep: string;
-  field: string;
-  accent: string;
-  accentSoft: string;
-  /** 主要按鈕（網頁 .btn.primary） */
+  bg: string;
   ink: string;
-  inkText: string;
+  muted: string;
+  /** 淡灰底的卡片與圓鈕 */
+  card: string;
+  line: string;
+  /** 進度條還沒走到的那幾段 */
+  track: string;
+  /** 清單拉出來時後面的底色、清單自己的底色 */
+  dim: string;
+  sheet: string;
+  handle: string;
   ok: string;
-  warn: string;
-  danger: string;
-  /** Portal 專用的強調色（區塊標題、硬陰影） */
-  pop: string;
+  bad: string;
+  badText: string;
+  /** 小球：白底是黑球，黑底是白球 */
+  ball: string;
+  ballBase: string;
+  eye: string;
+  ballShadow: string | undefined;
+  /** 選單按鈕的實心底（蓋在會捲動的內容上） */
+  solid: string;
 };
 
-const base = { borderWidth: 1, radius: 22, radiusSm: 999 };
-
-/**
- * App 2.0 的外觀：純黑底、白字、霓虹黃重點色、彩色漸層磚（使用者 2026-11-20 選的「B 版」，照參考影片）。
- * 不再跟網頁的主題走；name 沿用 fluento 只是為了走「圓角」那一支樣式。
- */
-export const NOIR: Palette = {
-  ...base, name: "fluento", mode: "dark", dark: true,
-  bgA: "#000000", bgB: "#000000", bgC: "#000000", blob1: "rgba(0,0,0,0)", blob2: "rgba(0,0,0,0)",
-  card: "rgba(255,255,255,0.07)", cardPressed: "rgba(255,255,255,0.14)", border: "rgba(255,255,255,0.14)",
-  shadow: "0px 0px 0px rgba(0,0,0,0)",
-  text: "#ffffff", muted: "rgba(255,255,255,0.62)", faint: "rgba(255,255,255,0.38)", sep: "rgba(255,255,255,0.1)", field: "rgba(255,255,255,0.08)",
-  accent: "#e6f24b", accentSoft: "rgba(230,242,75,0.16)", ink: "#ffffff", inkText: "#000000",
-  ok: "#7dffb0", warn: "#ffd23f", danger: "#ff6b80", pop: "#e6f24b",
+export const LIGHT: Palette = {
+  dark: false, bg: "#ffffff", ink: "#111113", muted: "#6b6b73", card: "rgba(0,0,0,0.035)", line: "rgba(0,0,0,0.1)", track: "rgba(0,0,0,0.12)",
+  dim: "#ececee", sheet: "#ffffff", handle: "rgba(0,0,0,0.2)", ok: "#1f9d55", bad: "#d14a35", badText: "#b93a23",
+  ball: "radial-gradient(circle at 32% 28%, #3a3a3e 0%, #161618 50%, #0b0b0c 100%)", ballBase: "#161618", eye: "#ffffff",
+  ballShadow: "0px 24px 32px -18px rgba(0,0,0,0.3)", solid: "#f6f6f6",
 };
 
-/** 每個專案／產品一組漸層（光環磚、專案卡用）：[中心, 中圈, 外圈] */
-export const HALOS: [string, string, string][] = [
-  ["#a8301c", "#6f9a62", "#4a7f9c"],
-  ["#0f7f86", "#4f9a78", "#5a8a4a"],
-  ["#e0457f", "#8a2a7a", "#4a2a8c"],
-  ["#2f47c8", "#1a2a8c", "#05081c"],
-  ["#c9963f", "#a06a48", "#7a4d34"],
-  ["#7f8f1e", "#4f5a16", "#2a300c"],
-];
-export const halo = (i: number) => {
-  const [a, b, c] = HALOS[((i % HALOS.length) + HALOS.length) % HALOS.length];
-  return `radial-gradient(circle at 50% 56%, ${a} 0%, ${a} 12%, ${b} 46%, ${c} 100%)`;
+export const DARK: Palette = {
+  dark: true, bg: "#000000", ink: "#f1f1f3", muted: "#9b9ba3", card: "rgba(255,255,255,0.06)", line: "rgba(255,255,255,0.14)", track: "rgba(255,255,255,0.18)",
+  dim: "#000000", sheet: "#141416", handle: "rgba(255,255,255,0.28)", ok: "#3ecf7a", bad: "#ff6a55", badText: "#ff7a66",
+  ball: "radial-gradient(circle at 32% 28%, #ffffff 0%, #ececee 50%, #c9c9cd 100%)", ballBase: "#ececee", eye: "#111113",
+  ballShadow: undefined, solid: "#141416",
 };
 
-/** 光環漸層，中心放在指定位置（大卡用：例如 "72% 30%"） */
-export const haloAt = (i: number, at: string) => {
-  const [a, b, c] = HALOS[((i % HALOS.length) + HALOS.length) % HALOS.length];
-  return `radial-gradient(circle at ${at}, ${a} 0%, ${a} 10%, ${b} 48%, ${c} 100%)`;
-};
+export const FONT = "Huninn_400Regular";
 
 export function useTheme(): Palette {
-  return NOIR;
+  const { look } = usePrefs();
+  const sys = useColorScheme();
+  return (look === "system" ? sys === "dark" : look === "dark") ? DARK : LIGHT;
 }
 
 /** 依配色產生樣式（配色沒變就不重算） */

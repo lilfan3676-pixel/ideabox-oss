@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { rememberProjectOrder } from "@/components/ui";
 import { api, ApiError } from "./api";
+import { L } from "./i18n";
 import { getSession, saveSession } from "./session";
-import { onDockRefresh } from "./dock";
 
 type State<T> = { data: T | null; error: string | null; loading: boolean; refreshing: boolean };
 
@@ -36,7 +36,7 @@ export function useApi<T>(path: string, opts?: { pollMs?: number }) {
       cache.set(p, data);
       if (pathRef.current === p) setState({ data, error: null, loading: false, refreshing: false });
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : "讀取失敗";
+      const msg = e instanceof ApiError ? e.message : L("讀取失敗", "Could not load");
       if (pathRef.current === p) setState((s) => ({ ...s, error: msg, loading: false, refreshing: false }));
     }
   }, []);
@@ -63,11 +63,11 @@ export function useApi<T>(path: string, opts?: { pollMs?: number }) {
     return () => sub.remove();
   }, [load]);
 
-  // 底部懸浮列的「重新整理」：目前掛著的畫面都重讀一次
-  useEffect(() => onDockRefresh(() => load("pull")), [load]);
-
   return { ...state, refresh: () => load("pull") };
 }
+
+/** 不另外讀，只看之前讀到的（選單上的現況用） */
+export const peekApi = <T,>(path: string) => (cache.get(path) as T | undefined) ?? null;
 
 export function clearApiCache() {
   cache.clear();
