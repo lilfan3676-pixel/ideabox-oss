@@ -56,12 +56,13 @@ export function Head({ title, right, pad }: { title: ReactNode; right?: ReactNod
 }
 
 /** 一般頁面：整頁可捲、往下拉重新整理；底部留位置給左下角的選單鈕 */
-export function Page({ children, refreshing, onRefresh, top = 12 }: { children: ReactNode; refreshing?: boolean; onRefresh?: () => void; top?: number }) {
+export function Page({ children, refreshing, onRefresh, top = 12, swiping }: { children: ReactNode; refreshing?: boolean; onRefresh?: () => void; top?: number; /** 正在左右滑（useSwipe 的 dragging）：先把上下捲鎖住，不然手指稍微斜一點整頁就跟著上下跑 */ swiping?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   usePrefs(); // 切換語言時重畫
   return (
     <ScrollView
+      scrollEnabled={!swiping}
       style={{ flex: 1, backgroundColor: t.bg }}
       contentContainerStyle={{ paddingTop: insets.top + top, paddingHorizontal: 28, paddingBottom: insets.bottom + 120 }}
       showsVerticalScrollIndicator={false}

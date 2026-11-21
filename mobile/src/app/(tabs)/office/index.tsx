@@ -69,7 +69,7 @@ export default function Office() {
   const moodOf = (p: OfficePerson) => (needsYou(p.status) ? "curious" : p.status === "working" ? "busy" : "sleep") as "curious" | "busy" | "sleep";
 
   return (
-    <Page refreshing={refreshing} onRefresh={refresh}>
+    <Page refreshing={refreshing} onRefresh={refresh} swiping={swipe.dragging}>
       <View {...swipe.handlers}>
         <Head title={L("辦公室", "Office")} right={<><Icon name="activity" size={14} color={t.muted} /><Txt size={14} lh={20} muted tab>{L(`${working} 個在工作`, `${working} working`)}</Txt></>} />
         {error ? <ErrorNote text={error} onRetry={refresh} /> : null}

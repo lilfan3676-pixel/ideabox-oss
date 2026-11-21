@@ -12,6 +12,7 @@ import { Big, Dot, ErrorNote, Label, Line, Loading, Sig, Small, TimeCell, Txt } 
 import { setSheet, useSheet } from "@/lib/dock";
 import { daysBetween, md, mdShort, pastBy, taipeiHm } from "@/lib/format";
 import { L } from "@/lib/i18n";
+import { axisOf, turnedSideways } from "@/lib/gesture";
 import { glide, reduceMotion } from "@/lib/motion";
 import { usePrefs } from "@/lib/prefs";
 import { getSession } from "@/lib/session";
@@ -143,15 +144,23 @@ export default function Today() {
   const pan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) => {
-        const ax = Math.abs(g.dx);
-        const ay = Math.abs(g.dy);
-        if (ax > 12 && ax > ay * 1.5) axis.current = "x";
-        else if (ay > 12 && ay > ax * 1.5) axis.current = g.dy < 0 ? "up" : "down";
-        else return false;
+        // 偏向判成左右（拇指滑左右的軌跡是弧形的，會帶著上下的位移），見 lib/gesture.ts
+        const a = axisOf(g.dx, g.dy);
+        if (!a) return false;
+        axis.current = a === "x" ? "x" : g.dy < 0 ? "up" : "down";
         return true;
       },
       onPanResponderMove: (_, g) => {
         const c = live.current;
+        // 一開始被當成上下，結果手指是往旁邊走：把拉出來的東西收回去，改成左右
+        if (axis.current !== "x" && axis.current && turnedSideways(g.dx, g.dy)) {
+          if (axis.current === "up") glide(sy, c.H);
+          else {
+            setArmed(false);
+            glide(pull, 0);
+          }
+          axis.current = "x";
+        }
         if (axis.current === "x") {
           if (c.n < 2 || reduceMotion()) return;
           // 第一件再往右、最後一件再往左：拉得動但很緊

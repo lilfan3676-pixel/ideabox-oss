@@ -43,7 +43,7 @@ export default function Monitor() {
   };
 
   return (
-    <Page refreshing={refreshing} onRefresh={refresh}>
+    <Page refreshing={refreshing} onRefresh={refresh} swiping={swipe.dragging}>
       <View {...swipe.handlers}>
       <Head title={L("監控", "Monitor")} pad={112} right={<Txt size={14} lh={20} muted tab>{down.length ? L(`${down.length} 項異常`, `${down.length} down`) : L("每 5 分鐘檢查", "Every 5 min")}</Txt>} />
       <Orb size={160} mood={curBad.length ? "worried" : "calm"} style={{ position: "absolute", right: -44, top: 20 }} />

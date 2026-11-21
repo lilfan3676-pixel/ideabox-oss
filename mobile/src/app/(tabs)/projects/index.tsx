@@ -29,7 +29,7 @@ export default function Projects() {
   const quiet = (p: AppProject) => daysBetween(p.last_activity_at.slice(0, 10), today);
 
   return (
-    <Page refreshing={refreshing} onRefresh={refresh}>
+    <Page refreshing={refreshing} onRefresh={refresh} swiping={swipe.dragging}>
       <View {...swipe.handlers}>
       <Head title={L("專案", "Projects")} pad={96} right={<Txt size={14} lh={20} muted tab>{L(`${active.length} 個進行中`, `${active.length} active`)}</Txt>} />
       <Orb size={136} mood="busy" style={{ position: "absolute", right: -36, top: 24 }} />
