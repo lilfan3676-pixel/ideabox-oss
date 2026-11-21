@@ -38,7 +38,7 @@ Stack: Next.js 16 (App Router) + React 19 + Supabase + Vercel + Claude API + Tel
 Also:
 - **Telegram bot**: save ideas, reply to add notes, change folder or project; `專案` for an overview, `myapp 下一步 …` / `myapp 里程碑 12/1 …` / `myapp 排程 11/20-11/25 …` to update projects; `myapp 發文 11/21 20:00 IG Reel topic` to schedule a post with an AI draft
 - **Slack progress sync** (optional): one channel per project; messages in the `【完成】【下一步】【階段】` format update the project
-- Four themes (Fluento / Ember / Portal / Mono) × light / dark
+- Four themes (Mono by default, plus Fluento / Ember / Portal) × light / dark
 - **Self-learning**: learns your preferences from what you adopt, delete and annotate
 - **Mobile app** (`mobile/`): today, calendar, projects, ideas, office, push notifications
 
