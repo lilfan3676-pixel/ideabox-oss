@@ -1,13 +1,14 @@
 import "server-only";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { callClaude, noThinking, textOf } from "./ai";
 import { db } from "./db";
 import { env } from "./env";
 import { removeImage, signedUrls } from "./images";
 import { cleanInvisible } from "./captionCheck";
-import { FORMAT_LABEL, FORMAT_STYLE, HUMAN_RULES, MAX_BODY, PLATFORM_LABEL, PLATFORM_STYLE, dueIso, duePosts, formatsFor, isFormat, isKind, isPlatform, KIND_STYLE, isPostStatus, postponed, reminderTexts, whenText, type Platform, type Post, type PostCommand, type PostFormat, type PostKind, type PostStatus } from "./postLogic";
+import { FORMAT_LABEL, FORMAT_STYLE, HUMAN_RULES, MAX_BODY, MAX_IMAGES, MAX_NOTE, PLATFORM_LABEL, PLATFORM_STYLE, dueIso, duePosts, formatsFor, imagesOf, isFormat, isKind, isPlatform, KIND_STYLE, isPostStatus, postponed, reminderTexts, whenText, type Platform, type Post, type PostCommand, type PostFormat, type PostKind, type PostStatus } from "./postLogic";
 import type { Project } from "./projectLogic";
 import { swipesForPrompt, type Swipe } from "./swipeLogic";
-import { esc, sendPhoto, sendToOwner, sendToOwnerWithButtons } from "./telegram";
+import { esc, sendPhotos, sendToOwner, sendToOwnerWithButtons } from "./telegram";
 
 // 發文排程器：每個專案的社群貼文。時間到用 Telegram 把文案傳給主人，自己貼上去
 // （FB 社團不開放程式發文；粉專、IG 之後可以接 Meta API）。資料表 project_posts（migration-028）。
@@ -17,6 +18,10 @@ export const POSTS_MIGRATION = "migration-028-posts.sql";
 export const FORMAT_MIGRATION = "migration-030-social.sql";
 /** 內容類型與靈感庫 */
 export const PLAN_MIGRATION = "migration-031-social-plan.sql";
+/** Threads 平台與備註欄位 */
+export const THREADS_MIGRATION = "migration-034-threads.sql";
+/** 一則貼文放多張圖 */
+export const IMAGES_MIGRATION = "migration-035-post-images.sql";
 
 /** ready=false 代表還沒執行 migration-028 */
 export async function listPosts(projectId?: string): Promise<{ posts: Post[]; ready: boolean }> {
@@ -32,9 +37,9 @@ export async function getPost(id: string): Promise<Post | null> {
   return (data as Post | null) ?? null;
 }
 
-export type PostInput = { platform: Platform; format?: PostFormat; kind?: PostKind | null; target: string; date: string; time: string; topic: string; body: string; status: PostStatus; imagePath?: string | null };
+export type PostInput = { platform: Platform; format?: PostFormat; kind?: PostKind | null; target: string; date: string; time: string; topic: string; body: string; status: PostStatus; /** 全部圖片的路徑，照順序；不給＝不動圖片 */ images?: string[]; note?: string };
 
-function rowOf(v: PostInput): { row: Record<string, unknown>; format: PostFormat; kind: PostKind | null | undefined } | { error: string } {
+function rowOf(v: PostInput): { row: Record<string, unknown>; format: PostFormat; kind: PostKind | null | undefined; note: string | undefined } | { error: string } {
   if (!isPlatform(v.platform)) return { error: "平台不對" };
   const due = dueIso(v.date, v.time);
   if (!due) return { error: "預定時間不對，請填日期和時間" };
@@ -45,9 +50,37 @@ function rowOf(v: PostInput): { row: Record<string, unknown>; format: PostFormat
   const format: PostFormat = isFormat(v.format) && formatsFor(v.platform).includes(v.format) ? v.format : "post";
   const topic = String(v.topic ?? "").trim().slice(0, 300);
   if (!body && !topic) return { error: "主題或文案至少要填一個" };
-  return { row: { platform: v.platform, target: String(v.target ?? "").trim().slice(0, 300), due_at: due, topic, body, status }, format, kind: v.kind === undefined ? undefined : isKind(v.kind) ? v.kind : null };
+  return { row: { platform: v.platform, target: String(v.target ?? "").trim().slice(0, 300), due_at: due, topic, body, status }, format, kind: v.kind === undefined ? undefined : isKind(v.kind) ? v.kind : null, note: v.note === undefined ? undefined : String(v.note).trim().slice(0, MAX_NOTE) };
 }
 
+const needs034 = `Threads 和備註需要先在 ideabox 的 Supabase 執行 ${THREADS_MIGRATION}`;
+const needs035 = `放第二張以上的圖片需要先在 ideabox 的 Supabase 執行 ${IMAGES_MIGRATION}`;
+
+/** 剛上傳、還沒存進貼文的圖片：路徑加上簽章交給瀏覽器，存檔時驗證，避免有人塞別人的圖片路徑進來 */
+const sigOf = (path: string) => createHmac("sha256", env.supabaseServiceKey()).update(`post-image:${path}`).digest("hex").slice(0, 32);
+export const imageToken = (path: string) => `${path}#${sigOf(path)}`;
+export function pathFromToken(token: string): string | null {
+  const i = token.lastIndexOf("#");
+  if (i < 1) return null;
+  const path = token.slice(0, i);
+  const a = Buffer.from(token.slice(i + 1));
+  const b = Buffer.from(sigOf(path));
+  return a.length === b.length && timingSafeEqual(a, b) ? path : null;
+}
+/** 瀏覽器送來的圖片清單（已經在這則貼文上的路徑，或剛上傳的簽章）→ 路徑；有不認得的回傳 null */
+export function resolveImages(list: unknown, post: Post | null): string[] | null {
+  if (!Array.isArray(list) || list.length > MAX_IMAGES) return null;
+  const mine = new Set(post ? imagesOf(post) : []);
+  const out: string[] = [];
+  for (const x of list) {
+    if (typeof x !== "string") return null;
+    const path = mine.has(x) ? x : pathFromToken(x);
+    if (!path) return null;
+    out.push(path);
+  }
+  return out;
+}
+const cleanImages = (list: string[]) => [...new Set(list.filter(Boolean))].slice(0, MAX_IMAGES);
 const needs030 = (format: PostFormat) => `${FORMAT_LABEL[format][0]}需要先在 ideabox 的 Supabase 執行 ${FORMAT_MIGRATION}`;
 
 export async function createPost(projectId: string, v: PostInput, source: Post["source"] = "manual"): Promise<{ post?: Post; error?: string }> {
@@ -56,7 +89,12 @@ export async function createPost(projectId: string, v: PostInput, source: Post["
   // 一般貼文不帶 format 欄位：還沒執行 migration-030 時原本的排程照常能用
   const extra: Record<string, unknown> = r.format === "post" ? {} : { format: r.format };
   if (r.kind) extra.kind = r.kind; // 沒選類型就不帶，還沒執行 migration-031 也能存
-  const { data, error } = await db().from("project_posts").insert({ ...r.row, ...extra, project_id: projectId, source, image_path: v.imagePath ?? null }).select().single();
+  if (r.note) extra.note = r.note; // 沒寫備註就不帶，還沒執行 migration-034 也能存
+  const imgs = cleanImages(v.images ?? []);
+  if (imgs.length > 1) extra.extra_images = imgs.slice(1); // 只有一張就不帶，還沒執行 migration-035 也能存
+  const { data, error } = await db().from("project_posts").insert({ ...r.row, ...extra, project_id: projectId, source, image_path: imgs[0] ?? null }).select().single();
+  if (error && imgs.length > 1) return { error: needs035 };
+  if (error && (r.note || v.platform === "threads")) return { error: needs034 };
   if (error) return { error: r.kind ? `內容類型需要先在 ideabox 的 Supabase 執行 ${PLAN_MIGRATION}` : r.format === "post" ? `存不進去：請先在 ideabox 的 Supabase 執行 ${POSTS_MIGRATION}` : needs030(r.format) };
   return { post: data as Post };
 }
@@ -68,13 +106,21 @@ export async function updatePost(post: Post, v: PostInput): Promise<{ post?: Pos
   const patch: Record<string, unknown> = { ...r.row, updated_at: new Date().toISOString() };
   if (r.format !== (isFormat(post.format) ? post.format : "post")) patch.format = r.format;
   if (r.kind !== undefined && r.kind !== (post.kind ?? null)) patch.kind = r.kind;
+  if (r.note !== undefined && r.note !== (post.note ?? "")) patch.note = r.note;
   if (r.row.due_at !== post.due_at || (r.row.status === "scheduled" && post.status !== "scheduled")) patch.notified_at = null;
   if (r.row.status === "posted" && post.status !== "posted") patch.posted_at = new Date().toISOString();
-  if (v.imagePath !== undefined && v.imagePath !== post.image_path) {
-    patch.image_path = v.imagePath;
-    await removeImage(post.image_path);
+  const before = imagesOf(post);
+  const imgs = v.images === undefined ? before : cleanImages(v.images);
+  if (imgs.join("|") !== before.join("|")) {
+    patch.image_path = imgs[0] ?? null;
+    // 多的那幾張有變才帶這個欄位：還沒執行 migration-035 時，只有一張圖的照常能改
+    if (imgs.slice(1).join("|") !== before.slice(1).join("|")) patch.extra_images = imgs.slice(1);
   }
   const { data, error } = await db().from("project_posts").update(patch).eq("id", post.id).select().single();
+  if (error && "extra_images" in patch) return { error: needs035 };
+  // 存成功才把拿掉的圖片從 Storage 刪掉
+  if (!error) for (const old of before) if (!imgs.includes(old)) await removeImage(old);
+  if (error && ("note" in patch || (v.platform === "threads" && post.platform !== "threads"))) return { error: needs034 };
   if (error) return { error: "kind" in patch ? `內容類型需要先在 ideabox 的 Supabase 執行 ${PLAN_MIGRATION}` : "format" in patch ? needs030(r.format) : error.message };
   return { post: data as Post };
 }
@@ -97,7 +143,7 @@ export async function postponePost(post: Post): Promise<string> {
 
 export async function deletePost(post: Post): Promise<void> {
   await db().from("project_posts").delete().eq("id", post.id);
-  await removeImage(post.image_path);
+  for (const path of imagesOf(post)) await removeImage(path);
 }
 
 // ---------- AI 寫草稿 ----------
@@ -186,9 +232,10 @@ export async function runPostReminders(now = Date.now()): Promise<number> {
     await db().from("project_posts").update({ notified_at: new Date(now).toISOString() }).eq("id", p.id);
     const t = reminderTexts(p, names.get(p.project_id) ?? "");
     const headId = await sendToOwner(t.head);
-    if (p.image_path) {
-      const url = (await signedUrls([p.image_path], 3600))[p.image_path];
-      if (url) await sendPhoto(env.telegramOwnerId(), url);
+    const paths = imagesOf(p);
+    if (paths.length) {
+      const urls = await signedUrls(paths, 3600);
+      await sendPhotos(env.telegramOwnerId(), paths.map((x) => urls[x]).filter(Boolean)); // 多張會合成一組相簿，照順序
     }
     const bodyId = await sendToOwnerWithButtons(t.body, buttonsFor(p.id));
     if (!headId && !bodyId) {

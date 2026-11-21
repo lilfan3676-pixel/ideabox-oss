@@ -13,7 +13,7 @@ import { auditAdvice, readMetricsImage, saveMetrics } from "@/lib/audit";
 import { checkProfile, draftComments, draftDm, draftReplies, type DmInput } from "@/lib/engage";
 import type { CommentOut, DmOut, ProfileResult, ReplyOut } from "@/lib/engageLogic";
 import type { Metrics } from "@/lib/auditLogic";
-import { createPost, deletePost, draftEnabled, draftPost, getPost, listPosts, postponePost, setPostStatus, updatePost, type PostInput } from "@/lib/posts";
+import { createPost, deletePost, draftEnabled, draftPost, getPost, imageToken, listPosts, postponePost, resolveImages, setPostStatus, updatePost, type PostInput } from "@/lib/posts";
 import { getProject } from "@/lib/projects";
 
 // 社群助手（發文排程）的動作：主人，或這個專案「可編輯」的合夥人才能用（requireProjectEdit）
@@ -39,19 +39,31 @@ async function saveImage(dataUrl: string | null | undefined): Promise<string | n
   return path;
 }
 
-export async function savePostAction(projectId: string, postId: string | null, v: Omit<PostInput, "imagePath"> & { image?: string | null }): Promise<PostResult> {
+/** 先把一張圖片傳上來（一次一張，避免一次送太大）；回傳的簽章在存檔時放進圖片清單 */
+export async function uploadPostImageAction(projectId: string, dataUrl: string): Promise<PostResult & { token?: string }> {
   await requireProjectEdit(projectId);
   const L = await getL();
   if (!isUuid(projectId) || !(await getProject(projectId))) return { ok: false };
-  let imagePath: string | null | undefined;
   try {
-    imagePath = await saveImage(v.image);
+    const path = await saveImage(dataUrl);
+    if (!path) return { ok: false, error: L("圖片存不進去", "Couldn't save the image") };
+    return { ok: true, token: imageToken(path) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : L("圖片存不進去", "Couldn't save the image") };
   }
-  const input: PostInput = { platform: v.platform, format: v.format, kind: v.kind, target: v.target, date: v.date, time: v.time, topic: v.topic, body: v.body, status: v.status, imagePath };
+}
+
+/** images：全部圖片照順序（已經在這則貼文上的路徑，或 uploadPostImageAction 回傳的簽章）；不給＝不動圖片 */
+export async function savePostAction(projectId: string, postId: string | null, v: Omit<PostInput, "images"> & { images?: string[] }): Promise<PostResult> {
+  await requireProjectEdit(projectId);
+  const L = await getL();
+  if (!isUuid(projectId) || !(await getProject(projectId))) return { ok: false };
+  const current = postId ? (isUuid(postId) ? await getPost(postId) : null) : null;
+  const images = v.images === undefined ? undefined : resolveImages(v.images, current && current.project_id === projectId ? current : null);
+  if (images === null) return { ok: false, error: L("圖片不對，請重新選一次", "Something's off with the images. Pick them again.") };
+  const input: PostInput = { platform: v.platform, format: v.format, kind: v.kind, target: v.target, date: v.date, time: v.time, topic: v.topic, body: v.body, status: v.status, images, note: v.note };
   if (postId) {
-    const post = isUuid(postId) ? await getPost(postId) : null;
+    const post = current;
     if (!post || post.project_id !== projectId) return { ok: false, error: L("找不到這則貼文", "Post not found") };
     const r = await updatePost(post, input);
     return r.post ? done() : { ok: false, error: r.error };

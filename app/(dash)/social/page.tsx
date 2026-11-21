@@ -5,6 +5,7 @@ import { taipeiDate } from "@/lib/dates";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
 import { signedUrls } from "@/lib/images";
 import { getL } from "@/lib/i18nServer";
+import { imagesOf } from "@/lib/postLogic";
 import { FORMAT_MIGRATION, POSTS_MIGRATION, draftEnabled, listPosts } from "@/lib/posts";
 import { listProjects } from "@/lib/projects";
 import { listSwipes } from "@/lib/swipes";
@@ -45,7 +46,7 @@ export default async function SocialPage() {
   }
   // migration-032：已發貼文的成效數字
   const hasMetrics = !posts.length || "metrics" in posts[0];
-  const images = await signedUrls(posts.map((p) => p.image_path ?? "").filter(Boolean), 3600);
+  const images = await signedUrls(posts.flatMap((p) => imagesOf(p)), 3600);
   // 還沒執行 migration-030 時貼文沒有 format 欄位（沒有貼文時先當作有，存檔失敗會提示）
   const hasFormat = !posts.length || "format" in posts[0];
 

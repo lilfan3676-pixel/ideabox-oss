@@ -93,7 +93,7 @@ alter table public.project_events enable row level security;
 create table if not exists public.project_posts (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects (id) on delete cascade,
-  platform text not null default 'fb_group' check (platform in ('fb_group', 'fb_page', 'ig', 'dcard', 'line_oa')),
+  platform text not null default 'fb_group' check (platform in ('fb_group', 'fb_page', 'ig', 'threads', 'dcard', 'line_oa')),
   format text not null default 'post' check (format in ('post', 'reel', 'carousel', 'story')),  -- 一般貼文／短影片／輪播／限時動態
   kind text check (kind in ('proof', 'teach', 'opinion', 'story', 'offer')),  -- 內容類型：成果證明／教學／觀點／故事／介紹產品
   target text not null default '',        -- 發在哪裡：社團名稱或連結
@@ -113,6 +113,11 @@ alter table public.project_posts add column if not exists format text not null d
 alter table public.project_posts add column if not exists kind text;  -- 舊版升級用
 alter table public.project_posts add column if not exists metrics jsonb;        -- 成效數字（觀看、觸及、分享…，自己填或貼截圖讓 AI 讀）
 alter table public.project_posts add column if not exists metrics_at timestamptz;
+alter table public.project_posts add column if not exists extra_images text[] not null default '{}';  -- 第二張以後的圖片（第一張在 image_path）
+alter table public.project_posts add column if not exists note text not null default '';  -- 給自己看的備註，提醒時一起傳
+-- 舊版升級用：平台加上 Threads
+alter table public.project_posts drop constraint if exists project_posts_platform_check;
+alter table public.project_posts add constraint project_posts_platform_check check (platform in ('fb_group', 'fb_page', 'ig', 'threads', 'dcard', 'line_oa'));
 create index if not exists project_posts_project_idx on public.project_posts (project_id, due_at);
 create index if not exists project_posts_due_idx on public.project_posts (due_at) where status = 'scheduled' and notified_at is null;
 

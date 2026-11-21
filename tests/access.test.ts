@@ -266,9 +266,9 @@ describe("手機 App（合夥人的手機）", () => {
       { id: "dm", name: "林的 iPhone", token_hash: sha256(TOKEN), push_token: "ExponentPushToken[m]", member_id: M, last_seen_at: new Date().toISOString() },
       { id: "do", name: "我的 iPhone", token_hash: "owner-hash", push_token: "ExponentPushToken[o]", last_seen_at: new Date().toISOString() },
     );
-    tables.project_events.push(
-      { id: "e1", project_id: A, title: "送件準備", start_date: "2026-11-20", end_date: "2026-11-20", start_time: null },
-      { id: "e2", project_id: B, title: "別人的會", start_date: "2026-11-20", end_date: "2026-11-20", start_time: null },
+    tables.project_events.push( // 結束日放很遠：首頁看的是「今天」的排程，寫死單一天的話隔天測試就會壞
+      { id: "e1", project_id: A, title: "送件準備", start_date: "2026-11-20", end_date: "2099-12-31", start_time: null },
+      { id: "e2", project_id: B, title: "別人的會", start_date: "2026-11-20", end_date: "2099-12-31", start_time: null },
     );
   });
 

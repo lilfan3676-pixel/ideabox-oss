@@ -8,8 +8,8 @@ import { METRIC_KEYS, METRIC_LABEL, metricsOf, type MetricKey } from "@/lib/audi
 import { checkCaption, VISIBLE_CHARS, type CaptionReport } from "@/lib/captionCheck";
 import { isIsoDate } from "@/lib/dates";
 import {
-  DEFAULT_TIME, FORMAT_LABEL, FORMAT_SHORT, KINDS, KIND_LABEL, MAX_BODY, PLATFORMS, PLATFORM_LABEL, PLATFORM_NOTE, STATUS_LABEL,
-  addDays, formatOf, formatsFor, groupByDay, isKind, isUrl, postCounts, postTitle, taipeiParts, weekDays, weekStart,
+  DEFAULT_TIME, FORMAT_LABEL, FORMAT_SHORT, KINDS, KIND_LABEL, MAX_BODY, MAX_IMAGES, MAX_NOTE, PLATFORMS, PLATFORM_LABEL, PLATFORM_NOTE, STATUS_LABEL,
+  addDays, formatOf, formatsFor, imagesOf, groupByDay, isKind, isUrl, postCounts, postTitle, taipeiParts, weekDays, weekStart,
   type Platform, type Post, type PostFormat, type PostKind, type PostStatus,
 } from "@/lib/postLogic";
 import { IconClose } from "../icons";
@@ -18,14 +18,15 @@ import type { Swipe } from "@/lib/swipeLogic";
 import type { ProfileResult } from "@/lib/engageLogic";
 import { EngageView, ProfileView } from "./SocialEngage";
 import { AuditView, PlanPanel, SwipeView } from "./SocialExtras";
-import { deletePostAction, draftPostAction, postponePostAction, readMetricsAction, saveMetricsAction, savePostAction, setPostStatusAction, type PostResult } from "./actions";
+import { deletePostAction, draftPostAction, postponePostAction, readMetricsAction, saveMetricsAction, savePostAction, setPostStatusAction, uploadPostImageAction, type PostResult } from "./actions";
 
 // 社群助手：一週看板（預設）＋完整排程清單。點貼文或「新增貼文」從右邊滑出編輯面板，
 // 裡面可以選格式（貼文／Reel／輪播／限動）、請 AI 寫草稿或腳本，下面即時顯示文案檢查。
 // 時間到伺服器會用 Telegram 把文案傳給主人（平台不開放自動發文，只能自己貼）。
 
 export type SocialProject = { id: string; slug: string; name: string; color: string; status: string; canEdit: boolean };
-type Form = { id: string | null; projectId: string; platform: Platform; format: PostFormat; kind: PostKind | null; target: string; date: string; time: string; topic: string; body: string; image?: string | null; hasImage: boolean; status: PostStatus | null };
+type Form = { id: string | null; projectId: string; platform: Platform; format: PostFormat; kind: PostKind | null; target: string; date: string; time: string; topic: string; body: string; note: string; /** 圖片照順序：path＝已經存好的，data＝剛選、還沒上傳的 */ imgs: FormImage[]; imgsChanged: boolean; status: PostStatus | null };
+type FormImage = { path?: string; data?: string };
 type Filter = "open" | "done" | "all";
 const VIEWS = ["week", "posts", "audit", "swipes", "engage", "profile"] as const;
 type MetricForm = Record<MetricKey, string>;
@@ -108,14 +109,14 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
   const blank = (date = today): Form | null => {
     const project = current?.canEdit ? current : editable[0];
     if (!project) return null;
-    return { id: null, projectId: project.id, platform: "ig", format: "post", kind: null, target: "", date: date < today ? today : date, time: DEFAULT_TIME, topic: "", body: "", hasImage: false, status: null };
+    return { id: null, projectId: project.id, platform: "ig", format: "post", kind: null, target: "", date: date < today ? today : date, time: DEFAULT_TIME, topic: "", body: "", note: "", imgs: [], imgsChanged: false, status: null };
   };
   const edit = (p: Post) => {
     const { date, time } = taipeiParts(p.due_at);
     setMsg(null);
     const m = metricsOf(p);
     setMetrics(Object.fromEntries(METRIC_KEYS.map((k) => [k, m[k] === undefined ? "" : String(m[k])])) as MetricForm);
-    setForm({ id: p.id, projectId: p.project_id, platform: p.platform, format: formatOf(p), kind: isKind(p.kind) ? p.kind : null, target: p.target, date, time, topic: p.topic, body: p.body, hasImage: !!p.image_path, status: p.status });
+    setForm({ id: p.id, projectId: p.project_id, platform: p.platform, format: formatOf(p), kind: isKind(p.kind) ? p.kind : null, target: p.target, date, time, topic: p.topic, body: p.body, note: p.note ?? "", imgs: imagesOf(p).map((path) => ({ path })), imgsChanged: false, status: p.status });
   };
   const close = () => {
     setForm(null);
@@ -127,7 +128,22 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
     if (!form) return;
     if (!form.body.trim() && !form.topic.trim()) return setMsg({ ok: false, text: L("主題或文案至少要填一個", "Add a topic or some copy") });
     run(
-      () => savePostAction(form.projectId, form.id, { platform: form.platform, format: form.format, kind: form.kind, target: form.target, date: form.date, time: form.time, topic: form.topic, body: form.body, status, image: form.image }),
+      async () => {
+        // 圖片有動才送清單；新選的一張一張先傳上去，換成簽章
+        let images: string[] | undefined;
+        if (form.imgsChanged) {
+          images = [];
+          for (const im of form.imgs) {
+            if (im.path) images.push(im.path);
+            else if (im.data) {
+              const up = await uploadPostImageAction(form.projectId, im.data);
+              if (!up.ok || !up.token) return { ok: false, error: up.error };
+              images.push(up.token);
+            }
+          }
+        }
+        return savePostAction(form.projectId, form.id, { platform: form.platform, format: form.format, kind: form.kind, target: form.target, date: form.date, time: form.time, topic: form.topic, body: form.body, note: form.note, status, images });
+      },
       status === "scheduled" ? L("已排定，時間到會用 Telegram 把文案傳給你。", "Scheduled. You'll get the copy on Telegram when it's time.") : status === "draft" ? L("已存成草稿（草稿不會提醒）。", "Saved as a draft (drafts don't send reminders).") : L("已儲存。", "Saved."),
       close,
     );
@@ -163,15 +179,37 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
       }
     });
 
-  const pickImage = async (file: File | undefined) => {
-    if (!file) return;
-    try {
-      const image = await shrinkImage(file);
-      setForm((f) => (f ? { ...f, image, hasImage: true } : f));
-    } catch {
-      setMsg({ ok: false, text: L("這張圖片讀不了，換一張 JPG 或 PNG。", "Couldn't read that image. Try a JPG or PNG.") });
+  const pickImages = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const added: FormImage[] = [];
+    let bad = 0;
+    // 照選的順序一張一張縮
+    for (const file of Array.from(files)) {
+      try {
+        added.push({ data: await shrinkImage(file) });
+      } catch {
+        bad++;
+      }
     }
+    setForm((f) => {
+      if (!f) return f;
+      const room = MAX_IMAGES - f.imgs.length;
+      if (added.length > room) setMsg({ ok: false, text: L(`一則最多 ${MAX_IMAGES} 張圖，多的沒有加進來。`, `Up to ${MAX_IMAGES} images per post. The extras weren't added.`) });
+      return { ...f, imgs: [...f.imgs, ...added.slice(0, Math.max(0, room))], imgsChanged: true };
+    });
+    if (bad) setMsg({ ok: false, text: L("有圖片讀不了，換成 JPG 或 PNG。", "Some images couldn't be read. Try JPG or PNG.") });
+    if (fileRef.current) fileRef.current.value = "";
   };
+  const moveImage = (i: number, by: number) =>
+    setForm((f) => {
+      if (!f) return f;
+      const j = i + by;
+      if (j < 0 || j >= f.imgs.length) return f;
+      const imgs = [...f.imgs];
+      [imgs[i], imgs[j]] = [imgs[j], imgs[i]];
+      return { ...f, imgs, imgsChanged: true };
+    });
+  const dropImage = (i: number) => setForm((f) => (f ? { ...f, imgs: f.imgs.filter((_, k) => k !== i), imgsChanged: true } : f));
 
   const copy = async (id: string, text: string) => {
     try {
@@ -301,9 +339,13 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
                     </header>
                     {p.topic && <p className="post-topic">{p.topic}</p>}
                     {p.body ? <p className={`post-body ${isOpen || !long ? "" : "clamp"}`}>{p.body}</p> : <p className="muted small">{L("還沒寫文案。按「編輯」再用 AI 寫草稿。", "No copy yet. Edit it and draft with AI.")}</p>}
-                    {p.image_path && images[p.image_path] && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img className="post-image" src={images[p.image_path]} alt={L("貼文圖片", "Post image")} loading="lazy" />
+                    {imagesOf(p).some((x) => images[x]) && (
+                      <div className="post-images">
+                        {imagesOf(p).filter((x) => images[x]).map((x, i) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img key={x} className="post-image" src={images[x]} alt={L(`貼文圖片 ${i + 1}`, `Post image ${i + 1}`)} loading="lazy" />
+                        ))}
+                      </div>
                     )}
                     <footer>
                       {live && checkMark(reports.get(p.id))}
@@ -408,17 +450,35 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
                 <textarea value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} rows={form.body.length > 300 ? 16 : 7} maxLength={MAX_BODY} placeholder={form.format === "post" ? L("自己寫，或先填主題按「AI 寫草稿」再改", "Write it yourself, or add a topic and draft with AI") : L("先填主題按上面的按鈕，AI 會照這個格式寫出腳本", "Add a topic and use the button above to get a script in this format")} />
               </label>
               <CheckPanel report={checkCaption(form.body, form.platform, form.format)} platform={form.platform} format={form.format} />
-              <div className="soc-form-row">
-                <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => pickImage(e.target.files?.[0])} />
-                <button type="button" className="btn ghost small" onClick={() => fileRef.current?.click()}>{form.hasImage ? L("換圖片", "Change image") : L("加圖片", "Add image")}</button>
-                {form.hasImage && (
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {form.image ? <img className="post-thumb" src={form.image} alt="" /> : <span className="muted small">{L("已有圖片", "Has an image")}</span>}
-                    <button type="button" className="btn ghost small" onClick={() => { setForm({ ...form, image: null, hasImage: false }); if (fileRef.current) fileRef.current.value = ""; }}>{L("拿掉", "Remove")}</button>
-                  </>
+              <div className="post-imgs">
+                <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => pickImages(e.target.files)} />
+                {form.imgs.map((im, i) => {
+                  const src = im.data ?? (im.path ? images[im.path] : undefined);
+                  return (
+                    <div className="post-img" key={im.path ?? `new-${i}`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {src ? <img src={src} alt={L(`第 ${i + 1} 張`, `Image ${i + 1}`)} /> : <span className="post-img-blank">{i + 1}</span>}
+                      <span className="post-img-n">{i + 1}</span>
+                      <div className="post-img-acts">
+                        <button type="button" onClick={() => moveImage(i, -1)} disabled={i === 0} aria-label={L(`第 ${i + 1} 張往前移`, `Move image ${i + 1} earlier`)}>‹</button>
+                        <button type="button" onClick={() => moveImage(i, 1)} disabled={i === form.imgs.length - 1} aria-label={L(`第 ${i + 1} 張往後移`, `Move image ${i + 1} later`)}>›</button>
+                        <button type="button" onClick={() => dropImage(i)} aria-label={L(`拿掉第 ${i + 1} 張`, `Remove image ${i + 1}`)}>×</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {form.imgs.length < MAX_IMAGES && (
+                  <button type="button" className="post-img-add" onClick={() => fileRef.current?.click()}>
+                    <span aria-hidden="true">＋</span>
+                    {form.imgs.length ? L("再加圖片", "Add more") : L("加圖片", "Add images")}
+                  </button>
                 )}
               </div>
+              {form.imgs.length > 1 && <p className="muted small">{L(`${form.imgs.length} 張圖，提醒時會照這個順序一起傳。用 ‹ › 調順序。`, `${form.imgs.length} images, sent in this order with the reminder. Use ‹ › to reorder.`)}</p>}
+              <label>
+                <span>{L("備註（只給自己看，提醒時一起傳）", "Note (for you only, sent with the reminder)")}</span>
+                <textarea value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} rows={form.note.length > 80 ? 5 : 2} maxLength={MAX_NOTE} placeholder={L("例如：配圖放在哪裡、發完要做什麼", "e.g. where the images are, what to do after posting")} />
+              </label>
               <p className="muted small">{L(...PLATFORM_NOTE[form.platform])}</p>
             </fieldset>
             {form.id && form.status === "posted" && hasMetrics && (

@@ -96,6 +96,19 @@ export async function sendPhoto(chatId: number | string, url: string, caption?: 
   return r?.message_id ?? null;
 }
 
+/** 傳一張或多張圖片：2 張以上合成一組相簿（一組最多 10 張），照順序；相簿傳不出去就改成一張一張傳。回傳傳出去幾張 */
+export async function sendPhotos(chatId: number | string, urls: string[]): Promise<number> {
+  const list = urls.filter(Boolean).slice(0, 10);
+  if (!list.length) return 0;
+  if (list.length > 1) {
+    const r = await call<unknown[]>("sendMediaGroup", { chat_id: chatId, media: list.map((url) => ({ type: "photo", media: url })) });
+    if (r) return list.length;
+  }
+  let sent = 0;
+  for (const url of list) if (await sendPhoto(chatId, url)) sent++;
+  return sent;
+}
+
 /** 傳給主人（TELEGRAM_OWNER_ID）。未設定時略過。 */
 export async function sendToOwner(html: string): Promise<number | null> {
   const owner = env.telegramOwnerId();

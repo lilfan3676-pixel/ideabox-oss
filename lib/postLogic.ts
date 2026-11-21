@@ -3,13 +3,14 @@ import { parseTime } from "./appTime";
 import { isIsoDate } from "./dates";
 import { addDays } from "./dates";
 
-export const PLATFORMS = ["fb_group", "fb_page", "ig", "dcard", "line_oa"] as const;
+export const PLATFORMS = ["fb_group", "fb_page", "ig", "threads", "dcard", "line_oa"] as const;
 export type Platform = (typeof PLATFORMS)[number];
 export const isPlatform = (s: unknown): s is Platform => typeof s === "string" && (PLATFORMS as readonly string[]).includes(s);
 export const PLATFORM_LABEL: Record<Platform, [string, string]> = {
   fb_group: ["FB 社團", "FB group"],
   fb_page: ["FB 粉專", "FB page"],
   ig: ["IG", "Instagram"],
+  threads: ["Threads", "Threads"],
   dcard: ["Dcard", "Dcard"],
   line_oa: ["LINE 官方帳號", "LINE official account"],
 };
@@ -18,6 +19,7 @@ export const PLATFORM_NOTE: Record<Platform, [string, string]> = {
   fb_group: ["FB 社團不開放程式自動發文：時間到會用 Telegram 把文案傳給你，自己貼上去。", "Facebook doesn't let apps post to groups: you'll get the copy on Telegram and post it yourself."],
   fb_page: ["粉專目前也是提醒你自己貼；之後可接 Meta API 自動發文。", "Pages are reminder-only for now; auto-posting via the Meta API can be added later."],
   ig: ["IG 目前也是提醒你自己貼；之後可接 Meta API 自動發文。", "Instagram is reminder-only for now; auto-posting via the Meta API can be added later."],
+  threads: ["Threads 目前是提醒你自己貼：時間到會用 Telegram 把文案傳給你。", "Threads is reminder-only: you'll get the copy on Telegram and post it yourself."],
   dcard: ["Dcard 沒有開放發文的 API：時間到提醒你自己貼。", "Dcard has no posting API: you'll get a reminder and post it yourself."],
   line_oa: ["LINE 官方帳號的動態要在 LINE 後台發：時間到提醒你自己貼。", "LINE posts go out from the LINE console: you'll get a reminder and post it yourself."],
 };
@@ -91,7 +93,12 @@ export type Post = {
   due_at: string;
   topic: string;
   body: string;
+  /** 第一張圖 */
   image_path: string | null;
+  /** 第二張以後的圖，照順序（migration-035；還沒執行時沒有這個欄位） */
+  extra_images?: string[] | null;
+  /** 給自己看的備註（migration-034）：提醒時一起傳，不是要貼出去的字 */
+  note?: string | null;
   status: PostStatus;
   notified_at: string | null;
   posted_at: string | null;
@@ -102,6 +109,11 @@ export type Post = {
 
 export const DEFAULT_TIME = "20:00";
 export const MAX_BODY = 5000;
+export const MAX_NOTE = 2000;
+/** 一則貼文最多幾張圖（Telegram 一組相簿最多 10 張，IG 輪播也是） */
+export const MAX_IMAGES = 10;
+/** 這則貼文的所有圖片，照順序 */
+export const imagesOf = (p: { image_path?: string | null; extra_images?: string[] | null }): string[] => [p.image_path, ...(Array.isArray(p.extra_images) ? p.extra_images : [])].filter((x): x is string => !!x);
 
 // ---------- 時間（一律用台北時間顯示與輸入） ----------
 
@@ -141,6 +153,7 @@ export const weekDays = (start: string): string[] => Array.from({ length: 7 }, (
 /** 從「發在哪裡」猜平台：中山社團 → FB 社團、IG 限動 → IG… 猜不到就當 FB 社團 */
 export function guessPlatform(target: string): Platform {
   const t = target.toLowerCase();
+  if (/threads|脆/.test(t)) return "threads";
   if (/dcard|狄卡/.test(t)) return "dcard";
   if (/line/.test(t)) return "line_oa";
   if (/(^|[^a-z])ig([^a-z]|$)|instagram|限動|限時動態|reels?/.test(t)) return "ig";
@@ -196,15 +209,16 @@ export function postponed(iso: string, days = 1): string {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** Telegram 提醒分兩則：第一則說明發在哪裡，第二則只有文案（長按就能整則複製） */
-export function reminderTexts(p: Pick<Post, "platform" | "target" | "due_at" | "topic" | "body"> & { format?: string | null }, projectName: string): { head: string; body: string } {
+export function reminderTexts(p: Pick<Post, "platform" | "target" | "due_at" | "topic" | "body"> & { format?: string | null; note?: string | null }, projectName: string): { head: string; body: string } {
   const where = p.target ? (isUrl(p.target) ? `<a href="${esc(p.target.trim())}">${esc(p.target.trim())}</a>` : esc(p.target)) : "（沒填）";
   const head = [
     `📣 <b>該發文了</b>｜${esc(projectName)}・${PLATFORM_LABEL[p.platform][0]}${formatOf(p) === "post" ? "" : `・${FORMAT_LABEL[formatOf(p)][0]}`}`,
     `發在：${where}`,
     `預定：${whenText(p.due_at)}${p.topic ? `｜${esc(p.topic)}` : ""}`,
     `ℹ️ ${PLATFORM_NOTE[p.platform][0]}`,
+    p.note?.trim() ? `\n📝 <b>備註</b>\n${esc(p.note.trim())}\n` : "",
     p.body.trim() ? (formatOf(p) === "post" ? "下一則是完整文案，長按就能複製。" : "下一則是完整腳本，貼文說明在最後面。") : "⚠️ 這則還沒寫文案。",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   return { head, body: esc(p.body.trim()) || "（還沒寫文案）" };
 }
 
@@ -239,6 +253,7 @@ export const PLATFORM_STYLE: Record<Platform, string> = {
   fb_group: "FB 社團貼文：像社團成員自己發的分享文，不像廣告。開頭一句話講清楚這是什麼，3～6 個短段落，必要時第一行加【宣傳】配合版規。結尾一個明確的下一步（連結或怎麼加入）。",
   fb_page: "FB 粉專貼文：自己的官方帳號，口吻可以稍微正式一點但還是口語。150～300 字，結尾一個行動。",
   ig: "IG 貼文說明：前兩行就要讓人想點「更多」，整體 80～200 字，結尾最多 3 個 hashtag。",
+  threads: "Threads 貼文：一行一句、短句分行，像本人隨手發的，第一句就要讓人停下來。整篇 500 字以內，不放 hashtag，結尾一個行動（例如留言 +1）。",
   dcard: "Dcard 文章：第一行是標題（不要加「標題：」），空一行後是內文。像學生自己發文的口氣，可以自嘲，不要業配感。",
   line_oa: "LINE 官方帳號動態：很短，60～150 字，一個重點、一個行動。",
 };

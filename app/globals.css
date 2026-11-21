@@ -2273,6 +2273,22 @@ button.bar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .post-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; font-size: 14px; }
 .post-body.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); }
 .post-image { max-width: 220px; max-height: 220px; border-radius: 10px; border: 1px solid var(--glass-border); object-fit: cover; }
+.post-images { display: flex; flex-wrap: wrap; gap: 8px; }
+.post-images .post-image { max-width: 160px; max-height: 160px; }
+/* 編輯面板的圖片：一排縮圖，左上角是順序，下面是往前／往後／拿掉 */
+.post-imgs { display: flex; flex-wrap: wrap; gap: 10px; }
+.post-img { position: relative; width: 84px; display: flex; flex-direction: column; gap: 4px; }
+.post-img > img, .post-img-blank { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; border: 1px solid var(--glass-border); background: var(--glass); }
+.post-img-blank { display: flex; align-items: center; justify-content: center; color: var(--muted); font-weight: 700; }
+.post-img-n { position: absolute; top: 5px; left: 5px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: rgba(0, 0, 0, 0.72); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.post-img-acts { display: flex; gap: 2px; }
+.post-img-acts button { flex: 1; height: 26px; border: 1px solid var(--glass-border); border-radius: 7px; background: var(--glass); color: var(--ink); font-size: 15px; line-height: 1; cursor: pointer; }
+.post-img-acts button:disabled { opacity: 0.35; cursor: default; }
+.post-img-acts button:focus-visible, .post-img-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.post-img-add { width: 84px; height: 84px; border: 1px dashed var(--glass-border); border-radius: 10px; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.post-img-add > span { font-size: 20px; line-height: 1; }
+.post-img-add:hover { color: var(--ink); border-color: var(--ink); }
+[data-theme="portal"] :is(.post-img > img, .post-img-blank, .post-img-add, .post-img-acts button) { border-radius: 0; }
 .post-card:is(.posted, .skipped) :is(.post-topic, .post-body) { color: var(--muted); }
 .post-card.skipped .post-topic { text-decoration: line-through; }
 .post-card footer .danger { color: var(--danger); margin-left: auto; }

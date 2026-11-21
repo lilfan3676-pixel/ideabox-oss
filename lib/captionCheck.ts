@@ -21,6 +21,8 @@ export type CaptionReport = {
 /** IG 說明文字大約前 125 個字會直接露出來，後面要點「更多」 */
 export const VISIBLE_CHARS = 125;
 export const IG_MAX = 2200;
+/** Threads 一則最多 500 字 */
+export const THREADS_MAX = 500;
 export const MAX_HASHTAGS = 5;
 
 // 鍵盤打不出來的字元：零寬空白、連接符、方向標記、BOM、軟連字號、Unicode 標籤字元…貼上時常混進來
@@ -114,6 +116,7 @@ export function checkCaption(body: string, platform: Platform, format: PostForma
 
   // ---- 要貼到平台上的那段 ----
   const line1 = firstLine(text);
+  if (platform === "threads" && text.length > THREADS_MAX) add("long", "fail", `超過 Threads 一則 ${THREADS_MAX} 字的上限（現在 ${text.length} 字），要拆成兩則或刪短。`, `Over the ${THREADS_MAX}-character limit for a Threads post (${text.length}). Split it or trim it.`);
   if (ig && text.length > IG_MAX) add("long", "fail", `超過 IG 上限 ${IG_MAX} 字（現在 ${text.length} 字）。`, `Over Instagram's ${IG_MAX}-character limit (${text.length}).`);
   if (ig && URL.test(text)) add("link", "fail", "IG 的說明文字不能點連結，網址放了也沒用。改成「連結在主頁」或請對方留言、私訊。", "Links in an Instagram caption aren't clickable. Point to the bio or ask for a comment or DM.");
   URL.lastIndex = 0;

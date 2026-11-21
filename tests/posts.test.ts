@@ -1,7 +1,7 @@
 // 發文排程器：指令解析、時間、AI 草稿、Telegram 提醒與按鈕、網頁動作
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeDb, reset, stored, tables } from "./support/fakeDb";
-import { CAPTION_MARK, captionOf, dueIso, duePosts, formatsFor, groupByDay, guessFormat, guessPlatform, parsePostCommand, postponed, reminderTexts, taipeiParts, weekDays, weekStart, type Post } from "@/lib/postLogic";
+import { CAPTION_MARK, captionOf, dueIso, duePosts, formatsFor, groupByDay, guessFormat, guessPlatform, imagesOf, parsePostCommand, postponed, reminderTexts, taipeiParts, weekDays, weekStart, type Post } from "@/lib/postLogic";
 import { checkCaption, cleanInvisible } from "@/lib/captionCheck";
 import { parseProjectCommand, type Project } from "@/lib/projectLogic";
 
@@ -10,6 +10,7 @@ vi.mock("@/lib/db", async (orig) => {
   return { ...actual, db: () => fakeDb };
 });
 let canEdit = true;
+const failMethods = new Set<string>();
 vi.mock("@/lib/auth", () => ({
   requireOwner: async () => ({ email: "me" }),
   requireProjectEdit: async () => {
@@ -50,7 +51,9 @@ beforeEach(() => {
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const u = String(url);
     if (u.startsWith("https://api.telegram.org/")) {
-      sent.push({ method: u.split("/").pop()!, body: init?.body ? JSON.parse(String(init.body)) : {} });
+      const method = u.split("/").pop()!;
+      sent.push({ method, body: init?.body ? JSON.parse(String(init.body)) : {} });
+      if (failMethods.has(method)) return Response.json({ ok: false, description: "測試：這個方法失敗" });
       return Response.json({ ok: true, result: { message_id: sent.length } });
     }
     if (u.startsWith("https://api.anthropic.com/")) {
@@ -104,6 +107,53 @@ describe("發文排程：規則", () => {
     expect(t.head).toContain("11/21 20:00");
     expect(t.body).toBe("A &lt;b&gt; &amp; B");
     expect(reminderTexts(post({ platform: "ig", body: "" }), "Fit").head).toContain("之後可接 Meta API");
+  });
+  it("多張圖：第一張在 image_path、其他照順序；改順序、拿掉會刪檔；只有一張時不帶新欄位", async () => {
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-key");
+    const { createPost, updatePost, deletePost, imageToken, pathFromToken, resolveImages } = await import("@/lib/posts");
+    const base = { platform: "threads" as const, target: "", date: "2026-11-21", time: "21:00", topic: "招募", body: "內文", status: "scheduled" as const };
+    for (const k of ["a", "b", "c", "d", "x"]) stored[`ideas/${k}.png`] = Buffer.from("x");
+    const one = await createPost("p1", { ...base, images: ["ideas/x.png"] });
+    expect(one.post?.image_path).toBe("ideas/x.png");
+    expect("extra_images" in tables.project_posts.find((r) => r.id === one.post!.id)!).toBe(false);
+    const a = await createPost("p1", { ...base, images: ["ideas/a.png", "ideas/b.png", "ideas/c.png"] });
+    expect(imagesOf(a.post!)).toEqual(["ideas/a.png", "ideas/b.png", "ideas/c.png"]);
+    expect(a.post).toMatchObject({ image_path: "ideas/a.png", extra_images: ["ideas/b.png", "ideas/c.png"] });
+    // 不給 images＝不動
+    expect(imagesOf((await updatePost(a.post!, { ...base, topic: "改主題" })).post!)).toHaveLength(3);
+    // 調順序、拿掉 b、加 d
+    const b = await updatePost(a.post!, { ...base, images: ["ideas/c.png", "ideas/a.png", "ideas/d.png"] });
+    expect(imagesOf(b.post!)).toEqual(["ideas/c.png", "ideas/a.png", "ideas/d.png"]);
+    expect(stored["ideas/b.png"]).toBeUndefined();
+    expect(stored["ideas/a.png"]).toBeDefined();
+    // 瀏覽器送來的清單：自己的路徑或剛上傳的簽章才收
+    const tok = imageToken("ideas/new.png");
+    expect(pathFromToken(tok)).toBe("ideas/new.png");
+    expect(pathFromToken("ideas/other.png#" + "0".repeat(32))).toBeNull();
+    expect(resolveImages(["ideas/c.png", tok], b.post!)).toEqual(["ideas/c.png", "ideas/new.png"]);
+    expect(resolveImages(["ideas/別人的.png"], b.post!)).toBeNull();
+    expect(resolveImages(Array(11).fill(tok), b.post!)).toBeNull();
+    await deletePost(b.post!);
+    expect([stored["ideas/c.png"], stored["ideas/a.png"], stored["ideas/d.png"]]).toEqual([undefined, undefined, undefined]);
+  });
+  it("Threads：猜得到平台、只有一般貼文、超過 500 字要改；備註跟提醒一起傳", async () => {
+    expect(guessPlatform("Threads")).toBe("threads");
+    expect(guessPlatform("脆")).toBe("threads");
+    expect(formatsFor("threads")).toEqual(["post"]);
+    expect(checkCaption("字".repeat(501), "threads").items.some((i) => i.key === "long" && i.level === "fail")).toBe(true);
+    expect(checkCaption("字".repeat(400) + "\n留言 +1", "threads").items.some((i) => i.key === "long")).toBe(false);
+    const t = reminderTexts(post({ platform: "threads", note: "配圖在桌面 <A>\n發完自己回第一則" }), "Fit");
+    expect(t.head).toContain("Fit・Threads");
+    expect(t.head).toContain("📝 <b>備註</b>\n配圖在桌面 &lt;A&gt;\n發完自己回第一則");
+    expect(t.body).not.toContain("配圖");
+    expect(reminderTexts(post({ platform: "threads" }), "Fit").head).not.toContain("備註");
+    const { createPost, updatePost } = await import("@/lib/posts");
+    const a = await createPost("p1", { platform: "threads", target: "", date: "2026-11-21", time: "21:00", topic: "招募", body: "內文", status: "scheduled", note: "  記得回第一則  " });
+    expect(a.post).toMatchObject({ platform: "threads", note: "記得回第一則", status: "scheduled", due_at: "2026-11-21T13:00:00.000Z" });
+    const b = await createPost("p1", { platform: "threads", target: "", date: "2026-11-23", time: "21:00", topic: "追蹤", body: "", status: "draft" });
+    expect("note" in tables.project_posts.find((r) => r.id === b.post!.id)!).toBe(false);
+    const c = await updatePost(a.post!, { platform: "threads", target: "", date: "2026-11-21", time: "21:00", topic: "招募", body: "內文", status: "scheduled", note: "" });
+    expect(c.post?.note).toBe("");
   });
 });
 
@@ -172,16 +222,37 @@ describe("發文排程：流程", () => {
     expect(sent.filter((s) => s.method === "answerCallbackQuery").at(-1)!.body.text).toContain("已經不在排程裡");
   });
 
+  it("時間到：兩張以上的圖合成一組相簿、照順序；相簿傳不出去就一張一張傳", async () => {
+    const { runPostReminders } = await import("@/lib/posts");
+    tables.project_posts.push({ ...post({ image_path: "ideas/1.png", extra_images: ["ideas/2.png", "ideas/3.png"] }) });
+    const now = Date.parse(dueIso("2026-11-21", "20:02")!);
+    expect(await runPostReminders(now)).toBe(1);
+    expect(sent.map((s) => s.method)).toEqual(["sendMessage", "sendMediaGroup", "sendMessage"]);
+    expect(sent[1].body.media).toEqual(["1", "2", "3"].map((n) => ({ type: "photo", media: `https://signed/ideas/${n}.png` })));
+    const { sendPhotos } = await import("@/lib/telegram");
+    sent.length = 0;
+    failMethods.add("sendMediaGroup");
+    expect(await sendPhotos(1, ["https://a/1", "https://a/2"])).toBe(2);
+    expect(sent.map((s) => s.method)).toEqual(["sendMediaGroup", "sendPhoto", "sendPhoto"]);
+    failMethods.clear();
+  });
+
   it("網頁動作：新增（含圖片）、修改後重新等提醒、狀態、刪除；沒權限不能改", async () => {
     const a = await import("@/app/(dash)/social/actions");
     const png = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0, 0, 0]).toString("base64")}`;
     const v = { platform: "ig" as const, target: "官方 IG", date: "2026-11-23", time: "21:00", topic: "怎麼玩", body: "五個步驟", status: "scheduled" as const };
-    expect((await a.savePostAction(FIT_ID, null, { ...v, image: png })).ok).toBe(true);
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-key");
+    const up = await a.uploadPostImageAction(FIT_ID, png);
+    const up2 = await a.uploadPostImageAction(FIT_ID, png);
+    expect(up.ok && up2.ok).toBe(true);
+    expect((await a.savePostAction(FIT_ID, null, { ...v, images: [up.token!, up2.token!] })).ok).toBe(true);
     const row = tables.project_posts[0];
+    expect(row.extra_images).toHaveLength(1);
+    expect((await a.savePostAction(FIT_ID, null, { ...v, images: ["ideas/亂塞的路徑.png"] })).ok).toBe(false);
     expect(row).toMatchObject({ platform: "ig", status: "scheduled", due_at: "2026-11-23T13:00:00.000Z" });
     expect(Object.keys(stored)).toContain(row.image_path);
     expect((await a.savePostAction(FIT_ID, null, { ...v, topic: "", body: "" })).ok).toBe(false);
-    expect((await a.savePostAction(FIT_ID, null, { ...v, image: "data:image/png;base64,AAAA" })).error).toContain("只接受");
+    expect((await a.uploadPostImageAction(FIT_ID, "data:image/png;base64,AAAA")).error).toContain("只接受");
 
     row.notified_at = "x";
     expect((await a.savePostAction(FIT_ID, row.id, { ...v, time: "22:00" })).ok).toBe(true); // 改時間 → 重新等提醒；沒動圖片 → 圖片留著
