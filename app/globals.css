@@ -233,6 +233,8 @@ select { width: auto; cursor: pointer; }
 /* 新標誌是黑白圖檔：外層不要主題的底色、框線、陰影，圖貼滿 */
 :root .logo:has(.ib-mark) { background: none; border: 0; box-shadow: none; padding: 0; overflow: hidden; border-radius: 50%; }
 .logo .ib-mark { width: 100%; height: 100%; display: block; }
+/* 深色時標誌反過來：白色圓底、黑色的 ib（使用者 2026-11-21 要的；淺色維持黑底白字）。圖檔是去背的黑白圖，直接反相就好 */
+[data-mode="dark"] .ib-mark { filter: invert(1); }
 /* 右下角的小助手（WebAssistant.tsx）：只在電腦版顯示 */
 .web-assistant { position: fixed; right: 18px; bottom: 14px; z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; }
 .web-assistant > * { pointer-events: auto; }
@@ -260,6 +262,9 @@ select { width: auto; cursor: pointer; }
 .launch-intro.out { opacity: 0; pointer-events: none; }
 .launch-intro canvas { display: block; width: 100%; height: 100%; background: #000; }
 /* 開場動畫只給手機版；電腦版不播（使用者 2026-11-20） */
+/* 深色時開場動畫也反過來：白底、黑色粒子收成黑色的 ib */
+[data-mode="dark"] .launch-intro, [data-mode="dark"] .launch-intro canvas { background: #fff; }
+[data-mode="dark"] .launch-intro canvas { filter: invert(1); }
 @media (min-width: 721px) { .launch-intro { display: none; } }
 .logo.big { width: 52px; height: 52px; border-radius: 16px; }
 
