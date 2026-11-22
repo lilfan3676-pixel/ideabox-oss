@@ -251,6 +251,9 @@ describe("給 App 的資料", () => {
     expect(d.events.map((e) => e.title).sort()).toEqual(["今天", "進行中"]);
     expect(d.events.find((e) => e.id === "e1")!.start_time).toBe("14:00");
     expect(d.milestones.map((m) => m.title)).toEqual(["上架"]);
+    // 每個專案還沒做的待辦：幾件、幾件過期、幾件這週到期（App 2.3 的讀數）
+    expect(Object.values(d.todo).reduce((n, c) => n + c.open, 0)).toBe(tables.project_milestones.filter((m) => !m.done).length);
+    expect(d.overdue).toBe(tables.project_milestones.filter((m) => !m.done && (m.due as string) < d.today).length);
   });
 
   it("月曆：月底算得對（11 月只到 30 日）", async () => {
@@ -286,6 +289,25 @@ describe("給 App 的資料", () => {
     expect(people.filter((p) => p.room === FIT_ID)).toEqual([expect.objectContaining({ role: "前端工程師", status: "working", task: "修地圖", sessions: 2 })]);
     expect(people.find((p) => p.room === "lobby")).toMatchObject({ role: "研究員", status: "ended", task: null });
     expect(d.rooms.at(-1)!.id).toBe("lobby");
+    expect(d.handoffs).toEqual([]);
+  });
+
+  it("辦公室：接手的人還在做才算交接中，回傳的是兩個人的代號；同一個人交給自己不算", async () => {
+    const { officeData } = await import("@/lib/app");
+    const iso = (min: number) => new Date(NOW - min * 60_000).toISOString();
+    tables.projects[0].folder = "Fit";
+    tables.agent_sessions.push(
+      { session_id: "a", project_id: FIT_ID, folder: "Fit", role: "前端工程師", task: "修地圖", status: "working", started_at: iso(20), updated_at: iso(1), ended_at: null, host_id: "local_aaaa" },
+      { session_id: "b", project_id: FIT_ID, folder: "Fit", role: "設計師", task: "畫草稿", status: "working", started_at: iso(10), updated_at: iso(1), ended_at: null, host_id: "local_bbbb" },
+      { session_id: "c", project_id: FIT_ID, folder: "Fit", role: "前端工程師", task: "另一件", status: "working", started_at: iso(10), updated_at: iso(1), ended_at: null, host_id: "local_cccc" },
+      { session_id: "d", project_id: FIT_ID, folder: "Fit", role: "研究員", task: "查完了", status: "ended", started_at: iso(50), updated_at: iso(40), ended_at: iso(40), host_id: "local_dddd" },
+    );
+    tables.agent_handoffs.push(
+      { id: "h1", from_session: "a", to_host: "local_bbbb", title: "畫草稿", created_at: iso(9) },
+      { id: "h2", from_session: "a", to_host: "local_cccc", title: "同一個人", created_at: iso(8) },
+      { id: "h3", from_session: "a", to_host: "local_dddd", title: "已經下班", created_at: iso(45) },
+    );
+    expect((await officeData(NOW)).handoffs).toEqual([{ from: `${FIT_ID}:前端工程師`, to: `${FIT_ID}:設計師` }]);
   });
 });
 

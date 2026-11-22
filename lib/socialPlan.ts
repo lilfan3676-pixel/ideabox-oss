@@ -1,4 +1,6 @@
 import "server-only";
+import { latestPatrolResult } from "./patrol";
+import { patrolForPlan } from "./patrolLogic";
 import { callStructured } from "./ai";
 import { auditForPrompt, auditOf } from "./auditLogic";
 import { db } from "./db";
@@ -55,7 +57,7 @@ const SYSTEM = [
   "・用繁體中文、台灣用語。",
 ].join("\n");
 
-export type PlanContext = { audit?: string; note: string; logs: ProjectLog[]; radar: RadarSummary | null; ideas: { summary: string | null; next_step: string | null }[]; swipes: Swipe[]; posts: Post[] };
+export type PlanContext = { audit?: string; patrol?: string; note: string; logs: ProjectLog[]; radar: RadarSummary | null; ideas: { summary: string | null; next_step: string | null }[]; swipes: Swipe[]; posts: Post[] };
 
 /** 把材料整理成給 AI 的文字（純函式，方便測試） */
 export function planPrompt(project: Pick<Project, "name" | "description">, dates: string[], ctx: PlanContext): string {
@@ -75,6 +77,7 @@ export function planPrompt(project: Pick<Project, "name" | "description">, dates
     ctx.radar?.pains.length ? `話題雷達這週看到的痛點（大家在抱怨什麼）：\n${ctx.radar.pains.slice(0, 6).map((p) => `・${p.title}：${p.detail.slice(0, 120)}`).join("\n")}` : "",
     ctx.ideas.length ? `這個專案的點子：\n${ctx.ideas.slice(0, 8).map((i) => `・${(i.summary ?? "").slice(0, 100)}`).join("\n")}` : "",
     hooks ? `同領域最近有效的開頭（挑開頭公式時參考）：\n${hooks}` : "",
+    ctx.patrol ? `Threads 這週高互動貼文的寫法（排 Threads 貼文時參考，主題裡可以寫要用哪種寫法）：\n${ctx.patrol}` : "",
     ctx.audit ? `我自己貼文的成效（多排有效的格式與類型，沒效的少排）：\n${ctx.audit}` : "",
     recent.length ? `最近發過和已經排好的（不要重複）：\n${recent.join("\n")}` : "",
   ].filter(Boolean).join("\n\n");
@@ -120,6 +123,7 @@ export async function planWeek(project: Project, week: string, today: string, no
   // 自己已發貼文的成效（沒有數字或還沒執行 migration-032 就是空的）
   const { data: posted } = await db().from("project_posts").select("*").eq("project_id", project.id).eq("status", "posted").order("due_at", { ascending: false }).limit(60);
   ctx.audit = auditForPrompt(auditOf((posted ?? []) as Post[]));
+  ctx.patrol = patrolForPlan(await latestPatrolResult(project.id).catch(() => null));
   if (!note.trim() && !ctx.logs.length && !ctx.radar?.pains.length && !ctx.ideas.length && !project.description?.trim()) {
     return { error: "沒有材料可以排：先在上面寫幾句這週發生的事，或到專案設定填一句話描述。" };
   }

@@ -119,8 +119,8 @@ export function AccountView({ name, email, canEdit, push, projects, pages, devic
           </div>
           <p className="muted small">{L("會收到（只限你看得到的專案）：", "You'll get (your projects only):")}</p>
           <ul className="account-list muted small">
-            <li>{L("早上 8 點今日排程與里程碑", "Today's schedule at 8 am")}</li>
-            <li>{L("里程碑前 7 天／1 天", "Milestones 7 / 1 days before")}</li>
+            <li>{L("早上 8 點今日排程與快到期的待辦", "Today's schedule at 8 am")}</li>
+            <li>{L("待辦到期前 7 天／1 天", "To-dos 7 / 1 days before they're due")}</li>
             <li>{L("有時間的排程開始前 30 分鐘", "30 min before timed items")}</li>
             <li>{L("產品掛掉／恢復（有產品監控畫面才會）", "Product down / back up (with Monitor access)")}</li>
           </ul>

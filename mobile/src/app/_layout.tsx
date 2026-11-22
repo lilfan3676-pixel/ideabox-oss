@@ -1,4 +1,3 @@
-import { Huninn_400Regular, useFonts } from "@expo-google-fonts/huninn";
 import * as Notifications from "expo-notifications";
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -15,7 +14,6 @@ export default function RootLayout() {
   const t = useTheme();
   const [intro, setIntro] = useState(true); // 每次打開 App 播一次開場
   const [prefsReady, setPrefsReady] = useState(false);
-  const [fontsReady, fontError] = useFonts({ Huninn_400Regular });
   const lastTap = Notifications.useLastNotificationResponse();
 
   useEffect(() => {
@@ -29,8 +27,8 @@ export default function RootLayout() {
     router.navigate("/");
   }, [lastTap, session]);
 
-  // 鑰匙圈、偏好、字型都好了才畫畫面（字型讀不到就用系統字，不卡住）
-  const ready = session !== undefined && prefsReady && (fontsReady || !!fontError);
+  // 鑰匙圈、偏好都讀好了才畫畫面（2.4 起用系統字，不用等字型）
+  const ready = session !== undefined && prefsReady;
   const base = t.dark ? DarkTheme : DefaultTheme;
   const navTheme = { ...base, colors: { ...base.colors, primary: t.ink, background: t.bg, card: t.bg, text: t.ink, border: t.line } };
   return (

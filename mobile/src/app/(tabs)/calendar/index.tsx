@@ -1,9 +1,10 @@
-// 月曆：上面是月份與格子（今天是實心圓，有事的日子底下一個點），下面是選到那天的事
+// 月曆（2.4 柔和卡片版）：月份與格子在一張卡片裡（選到的日子是主色圓盤，今天是主色圓框，有事的日子底下一個重點色的點），
+// 下面是選到那天的事：時間在左、卡片在右
 import * as Haptics from "expo-haptics";
 import { useMemo, useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { Icon } from "@/components/Icon";
-import { Big, Dot, Empty, ErrorNote, Head, Label, Line, Page, projectColor, RoundButton, Small, TimeCell, Txt } from "@/components/ui";
+import { Card, Dot, Empty, ErrorNote, Head, Page, projectColor, Sec, Tag, TimeRow, Txt } from "@/components/ui";
 import { addDays, md, pastBy, taipeiHm, taipeiToday } from "@/lib/format";
 import { L, lang } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
@@ -21,7 +22,7 @@ export default function CalendarScreen() {
   const t = useTheme();
   const today = taipeiToday();
   // 一格的寬度用算的（用百分比排七格會因為四捨五入擠到下一排）
-  const cell = Math.floor((useWindowDimensions().width - 40) / 7);
+  const cell = Math.floor((useWindowDimensions().width - 60) / 7);
   const [month, setMonth] = useState(today.slice(0, 7));
   const [selected, setSelected] = useState(today);
   const { data, error, refreshing, refresh } = useApi<CalendarData>(`/api/app/calendar?month=${month}`);
@@ -60,53 +61,57 @@ export default function CalendarScreen() {
     Haptics.selectionAsync().catch(() => null);
   };
 
+  const nextId = selected === today ? dayEvents.find((e) => e.start_time && !pastBy(e.start_time, nowHm ?? "00:00"))?.id : undefined;
   return (
     <Page refreshing={refreshing} onRefresh={refresh}>
-      <Head title={L("月曆", "Calendar")} right={month === today.slice(0, 7) ? <><Icon name="tasks" size={16} color={t.muted} /><Txt size={14} lh={20} muted tab>{L(`這週 ${thisWeek} 件`, `${thisWeek} this week`)}</Txt></> : null} />
+      <Head title={L("月曆", "Calendar")} sub={month === today.slice(0, 7) ? L(`這週 ${thisWeek} 件`, `${thisWeek} this week`) : undefined} />
       {error ? <ErrorNote text={error} onRetry={refresh} /> : null}
-      <View style={{ flexDirection: "row", alignItems: "center", marginTop: 40 }}>
-        <View style={{ flex: 1 }}>
-          <Big lines={1}>{lang() === "en" ? `${MONTHS[+month.slice(5, 7) - 1]} ${month.slice(0, 4)}` : `${+month.slice(5, 7)} 月`}</Big>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+
+      {/* 月份與格子放在同一張卡片裡 */}
+      <Card top={16} style={{ paddingHorizontal: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 6, marginBottom: 6 }}>
+          <Txt med size={17} lh={24} style={{ flex: 1 }}>{lang() === "en" ? `${MONTHS[+month.slice(5, 7) - 1]} ${month.slice(0, 4)}` : `${month.slice(0, 4)} 年 ${+month.slice(5, 7)} 月`}</Txt>
           {month !== today.slice(0, 7) ? (
-            <Pressable hitSlop={12} accessibilityRole="button" onPress={() => { setMonth(today.slice(0, 7)); setSelected(today); }}>
-              <Txt size={14} style={{ textDecorationLine: "underline", marginRight: 4 }}>{L("回今天", "Today")}</Txt>
+            <Pressable hitSlop={10} accessibilityRole="button" onPress={() => { setMonth(today.slice(0, 7)); setSelected(today); }} style={{ marginRight: 10 }}>
+              <Txt size={13.5} color={t.main}>{L("回今天", "Today")}</Txt>
             </Pressable>
           ) : null}
-          <RoundButton icon="back" label={L("上個月", "Previous month")} onPress={() => go(-1)} />
-          <RoundButton icon="chev" label={L("下個月", "Next month")} onPress={() => go(1)} />
+          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel={L("上個月", "Previous month")} onPress={() => go(-1)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: t.soft, alignItems: "center", justifyContent: "center", marginRight: 6 }}><Icon name="back" size={16} color={t.ink} /></Pressable>
+          <Pressable hitSlop={8} accessibilityRole="button" accessibilityLabel={L("下個月", "Next month")} onPress={() => go(1)} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: t.soft, alignItems: "center", justifyContent: "center" }}><Icon name="chev" size={16} color={t.ink} /></Pressable>
         </View>
-      </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+          {week.map((w, i) => <Txt key={i} size={12} lh={24} muted style={{ width: cell, textAlign: "center" }}>{w}</Txt>)}
+          {cells.map((d, i) => {
+            if (!d) return <View key={`x${i}`} style={{ width: cell, height: 44 }} />;
+            const sel = d === selected;
+            const isToday = d === today;
+            return (
+              <Pressable key={d} onPress={() => setSelected(d)} accessibilityRole="button" accessibilityState={{ selected: sel }} accessibilityLabel={`${md(d)}${busy.has(d) ? L("，有事", ", has events") : ""}`} style={{ width: cell, height: 44, alignItems: "center", justifyContent: "center" }}>
+                <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: sel ? t.main : "transparent", borderWidth: isToday && !sel ? 1.5 : 0, borderColor: t.main }}>
+                  <Txt num size={14} lh={18} color={sel ? t.onMain : d < today ? t.muted : t.ink}>{+d.slice(8, 10)}</Txt>
+                </View>
+                <View style={{ position: "absolute", bottom: 1, width: 4, height: 4, borderRadius: 2, backgroundColor: busy.has(d) && !sel ? t.acc : "transparent" }} />
+              </Pressable>
+            );
+          })}
+        </View>
+      </Card>
 
-      <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 20, marginHorizontal: -8 }}>
-        {week.map((w, i) => <Txt key={i} size={12} lh={24} muted style={{ width: cell, textAlign: "center" }}>{w}</Txt>)}
-        {cells.map((d, i) => {
-          if (!d) return <View key={`x${i}`} style={{ width: cell, height: 48 }} />;
-          const sel = d === selected;
-          const isToday = d === today;
-          return (
-            <Pressable key={d} onPress={() => setSelected(d)} accessibilityRole="button" accessibilityState={{ selected: sel }} accessibilityLabel={`${md(d)}${busy.has(d) ? L("，有事", ", has events") : ""}`} style={{ width: cell, height: 48, alignItems: "center", justifyContent: "center" }}>
-              <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: sel ? t.ink : "transparent", borderWidth: isToday && !sel ? 1 : 0, borderColor: t.ink }}>
-                <Txt size={15} lh={18} tab color={sel ? t.bg : d < today ? t.muted : t.ink}>{+d.slice(8, 10)}</Txt>
-              </View>
-              <View style={{ position: "absolute", bottom: 1, width: 4, height: 4, borderRadius: 2, backgroundColor: busy.has(d) && !sel ? t.ink : "transparent" }} />
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <Label top={20}>{md(selected)}{selected === today ? `　${L("今天", "Today")}` : ""}</Label>
+      <Sec right={rows.length ? L(`${rows.length} 件`, `${rows.length}`) : undefined}>{`${md(selected)}${selected === today ? `　${L("今天", "Today")}` : ""}`}</Sec>
       {rows.length ? (
-        rows.map((r, i) => (
-          <Line key={r.key} last={i === rows.length - 1} style={{ opacity: r.past ? 0.5 : 1 }}>
-            {r.milestone ? <View style={{ width: 48 }}><Icon name="flag" size={16} color={t.ink} label={L("里程碑", "Milestone")} /></View> : <TimeCell strong={!!r.time}>{r.time ?? L("整天", "All day")}</TimeCell>}
-            <Txt style={{ flex: 1 }} numberOfLines={2}>{r.title}</Txt>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, maxWidth: 96 }}>
-              <Dot color={projectColor(r.project)} />
-              <Small>{name.get(r.project) ?? ""}</Small>
-            </View>
-          </Line>
+        rows.map((r) => (
+          <TimeRow key={r.key} time={r.milestone ? L("到期", "Due") : r.time ?? L("整天", "All day")} past={r.past}>
+            <Card top={0} tone={r.key === nextId ? "main" : undefined}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Txt med size={15} lh={21} color={r.key === nextId ? t.onMain : undefined} numberOfLines={2} style={{ flex: 1 }}>{r.title}</Txt>
+                {r.key === nextId ? <Tag tone="acc">{L("下一件", "Next")}</Tag> : r.milestone ? <Tag>{L("待辦", "To-do")}</Tag> : null}
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                <Dot color={projectColor(r.project)} size={7} />
+                <Txt size={13} lh={18} color={r.key === nextId ? t.onMain : t.muted} style={{ opacity: r.key === nextId ? 0.8 : 1 }} numberOfLines={1}>{name.get(r.project) ?? ""}</Txt>
+              </View>
+            </Card>
+          </TimeRow>
         ))
       ) : (
         <Empty text={data ? L("這天沒有排程", "Nothing on this day") : L("讀取中", "Loading")} />

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useL } from "@/app/LangProvider";
-import { stageSegments, type Milestone, type Project } from "@/lib/projectLogic";
+import { stageSegments, withDate, type Milestone, type Project } from "@/lib/projectLogic";
 
 // 全部專案的時程表（甘特圖）：每個專案一列，過去的階段色條、預估接下來的階段（虛線）、里程碑、每天有沒有更新的小點。
 // 範圍可切換 3 個月／6 個月／1 年，今天放在正中間。
@@ -25,7 +25,7 @@ const taipeiDay = (t: number) => new Date(t + 8 * 3_600_000).toISOString().slice
 
 export function Schedule({
   projects,
-  milestones,
+  milestones: allMilestones,
   stageLogs,
   activity,
   today,
@@ -41,6 +41,8 @@ export function Schedule({
   colorOf: (id: string) => string;
 }) {
   const L = useL();
+  // 時程表只畫有日期的待辦
+  const milestones = useMemo(() => withDate(allMilestones), [allMilestones]);
   const [range, setRange] = useState<number>(180);
   useEffect(() => {
     try {
@@ -115,7 +117,7 @@ export function Schedule({
     <section className="glass schedule" aria-label={L("全部專案時程表", "All projects schedule")}>
       <div className="schedule-head">
         <b>{L("時程表", "Schedule")}</b>
-        <span className="muted small">{L("色條是走過的階段，虛線是依里程碑推估的接下來階段", "Bars are past stages; dashed boxes are estimated next stages based on milestones")}</span>
+        <span className="muted small">{L("色條是走過的階段，虛線是依有日期的待辦推估的接下來階段", "Bars are past stages; dashed boxes are estimated next stages based on dated to-dos")}</span>
         <div className="seg push" role="group" aria-label={L("時間範圍", "Range")}>
           {RANGES.map((r) => (
             <button key={r.days} type="button" className={range === r.days ? "active" : ""} aria-pressed={range === r.days} onClick={() => pick(r.days)}>

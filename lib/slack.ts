@@ -5,7 +5,7 @@ import { db } from "./db";
 import { env } from "./env";
 import type { Milestone, Project } from "./projectLogic";
 import { addEvent, addMilestone, listProjects, logActivity, updateProject } from "./projects";
-import { nextCursor, planChanges, planSlackUpdate, slackChannelFor, slackNotice, usableMessages, type SlackAi, type SlackMessage } from "./slackLogic";
+import { nextCursor, openTodos, planChanges, planSlackUpdate, slackChannelFor, slackNotice, usableMessages, type SlackAi, type SlackMessage } from "./slackLogic";
 import { logError } from "./sysLog";
 import { sendToOwnerWithButtons } from "./telegram";
 import { putToken } from "./tgFlow";
@@ -67,12 +67,18 @@ const AI_SCHEMA = {
     stage: { type: "string", description: "回報明確說進到哪個階段時，填階段清單中的名稱；沒提到就留空字串" },
     milestones: {
       type: "array",
-      description: "回報裡有明確日期的目標（例如上線日、截止日），每一個有日期的項目都要列出來，不要省略；沒有就空陣列",
+      description:
+        "要新增的待辦：回報裡【待辦】或寫明「之後還要做」的事，加上有明確日期的目標（例如上線日、截止日，每一個有日期的都要列）。已經在「還沒做完的待辦」清單裡的不要再列；跟 next_step 同一件事的不要再列；這次回報已經做完的不要列。沒有就空陣列",
       items: {
         type: "object",
-        properties: { title: { type: "string", description: "20 字內" }, due: { type: "string", description: "YYYY-MM-DD" } },
+        properties: { title: { type: "string", description: "20 字內" }, due: { type: "string", description: "有明確日期填 YYYY-MM-DD；沒有日期填空字串，不要自己猜日期" } },
         required: ["title", "due"],
       },
+    },
+    done: {
+      type: "array",
+      description: "回報明確說已經做完的事，對到「還沒做完的待辦」清單裡的哪幾件，填編號。要是同一件事才算；只做了一部分、還在進行、或不確定是不是同一件的不要填。沒有就空陣列",
+      items: { type: "integer" },
     },
     events: {
       type: "array",
@@ -88,10 +94,10 @@ const AI_SCHEMA = {
       },
     },
   },
-  required: ["log", "next_step", "stage", "milestones", "events"],
+  required: ["log", "next_step", "stage", "milestones", "done", "events"],
 };
 
-async function readReport(p: Project, msgs: SlackMessage[], today: string): Promise<SlackAi> {
+async function readReport(p: Project, msgs: SlackMessage[], today: string, open: Pick<Milestone, "title" | "due">[]): Promise<SlackAi> {
   const text = msgs.map((m) => m.text!.trim()).join("\n---\n").slice(0, 8000);
   return callStructured<SlackAi>({
     model: env.analyzeModel(),
@@ -101,6 +107,7 @@ async function readReport(p: Project, msgs: SlackMessage[], today: string): Prom
       `專案：${p.name}`,
       `階段清單：${p.stages.join("、")}；目前在「${p.stages[p.stage] ?? ""}」`,
       `目前的下一步：${p.next_step ?? "（還沒寫）"}`,
+      open.length ? `還沒做完的待辦（編號給 done 用）：\n${open.map((m, i) => `${i + 1}. ${m.title}${m.due ? `（${m.due}）` : ""}`).join("\n")}` : "還沒做完的待辦：（沒有）",
       "【排程】這類有日期區間的工作放 events；月日沒寫年份就用今天往後最接近的那一年。",
       "有好幾則時以最新的為準。回報裡的密碼、金鑰、權杖一律不要寫進輸出。",
     ].join("\n"),
@@ -167,20 +174,32 @@ export async function runSlackSync(now = Date.now()): Promise<SlackSyncResult> {
         const { data, error } = await db().from("project_events").select("project_id, title, start_date");
         events = error ? [] : ((data ?? []) as { project_id: string; title: string; start_date: string }[]);
       }
-      const ai = await readReport(p, msgs, today);
+      const ai = await readReport(p, msgs, today, openTodos(p.id, milestones));
       const plan = planSlackUpdate(p, ai, today, milestones, events);
 
       // 先記日誌，再改下一步／階段（updateProject 會自動再記一筆改了什麼）
       if (plan.log) await logActivity(p.id, plan.log, "slack");
       if (Object.keys(plan.patch).length) await updateProject(p, plan.patch, "slack");
       const added: string[] = [];
+      // 回報說做完的待辦自動打勾
+      const checked: string[] = [];
+      for (const d of plan.done) {
+        await db().from("project_milestones").update({ done: true }).eq("id", d.id);
+        await logActivity(p.id, `完成待辦：${d.title}`, "slack");
+        checked.push(d.id);
+        const row = milestones.find((m) => m.id === d.id);
+        if (row) row.done = true;
+      }
+      const kept: typeof plan.milestones = [];
       for (const m of plan.milestones) {
-        await addMilestone(p.id, m.title, m.due, "slack");
-        const { data } = await db().from("project_milestones").select("id").eq("project_id", p.id).eq("title", m.title).eq("due", m.due).limit(1);
-        const id = (data as { id: string }[] | null)?.[0]?.id;
+        // 沒日期的待辦要先執行 migration-036；還沒執行就略過這一件，其他照常
+        const id = await addMilestone(p.id, m.title, m.due, "slack").catch((e) => (m.due ? Promise.reject(e) : undefined));
+        if (id === undefined) continue;
+        kept.push(m);
         if (id) added.push(id);
         milestones.push({ id: id ?? "", project_id: p.id, title: m.title, due: m.due, done: false, reminded_7: false, reminded_1: false });
       }
+      plan.milestones = kept;
       const addedEv: string[] = [];
       for (const e of plan.events) {
         const id = await addEvent(p.id, e.title, e.start, e.end, "slack").catch(() => null);
@@ -190,7 +209,7 @@ export async function runSlackSync(now = Date.now()): Promise<SlackSyncResult> {
       await saveCursor(ch.id, newCursor);
 
       if (planChanges(plan)) {
-        const token = await putToken({ undo: p.id, stage: p.stage, next: p.next_step, ms: added, ev: addedEv });
+        const token = await putToken({ undo: p.id, stage: p.stage, next: p.next_step, ms: added, dn: checked, ev: addedEv });
         await sendToOwnerWithButtons(slackNotice(p, plan), [[{ text: "↩️ 改回來", data: `pu:${token}` }]]);
       }
       touched++;

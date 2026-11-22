@@ -16,7 +16,9 @@ import { IconClose } from "../icons";
 import { useView } from "../Nav";
 import type { Swipe } from "@/lib/swipeLogic";
 import type { ProfileResult } from "@/lib/engageLogic";
+import { typeLabel, type PatrolTemplate } from "@/lib/patrolLogic";
 import { EngageView, ProfileView } from "./SocialEngage";
+import { PatrolView, type PatrolData } from "./SocialPatrol";
 import { AuditView, PlanPanel, SwipeView } from "./SocialExtras";
 import { deletePostAction, draftPostAction, postponePostAction, readMetricsAction, saveMetricsAction, savePostAction, setPostStatusAction, uploadPostImageAction, type PostResult } from "./actions";
 
@@ -25,10 +27,10 @@ import { deletePostAction, draftPostAction, postponePostAction, readMetricsActio
 // 時間到伺服器會用 Telegram 把文案傳給主人（平台不開放自動發文，只能自己貼）。
 
 export type SocialProject = { id: string; slug: string; name: string; color: string; status: string; canEdit: boolean };
-type Form = { id: string | null; projectId: string; platform: Platform; format: PostFormat; kind: PostKind | null; target: string; date: string; time: string; topic: string; body: string; note: string; /** 圖片照順序：path＝已經存好的，data＝剛選、還沒上傳的 */ imgs: FormImage[]; imgsChanged: boolean; status: PostStatus | null };
+type Form = { id: string | null; projectId: string; platform: Platform; format: PostFormat; kind: PostKind | null; target: string; date: string; time: string; topic: string; body: string; note: string; /** 圖片照順序：path＝已經存好的，data＝剛選、還沒上傳的 */ imgs: FormImage[]; imgsChanged: boolean; status: PostStatus | null; /** 海巡的模板：AI 寫草稿時照這個骨架寫（不存檔） */ template: Pick<PatrolTemplate, "type" | "skeleton"> | null };
 type FormImage = { path?: string; data?: string };
 type Filter = "open" | "done" | "all";
-const VIEWS = ["week", "posts", "audit", "swipes", "engage", "profile"] as const;
+const VIEWS = ["week", "posts", "audit", "swipes", "patrol", "engage", "profile"] as const;
 type MetricForm = Record<MetricKey, string>;
 const noMetrics = (): MetricForm => Object.fromEntries(METRIC_KEYS.map((k) => [k, ""])) as MetricForm;
 const WEEKDAY: [string, string][] = [["一", "Mon"], ["二", "Tue"], ["三", "Wed"], ["四", "Thu"], ["五", "Fri"], ["六", "Sat"], ["日", "Sun"]];
@@ -49,7 +51,7 @@ async function shrinkImage(file: File): Promise<string> {
   return canvas.toDataURL("image/jpeg", 0.82);
 }
 
-export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasKind, hasMetrics, swipes, swipesReady, profiles, today, now }: { projects: SocialProject[]; posts: Post[]; images: Record<string, string>; aiEnabled: boolean; hasFormat: boolean; hasKind: boolean; hasMetrics: boolean; swipes: Swipe[]; swipesReady: boolean; profiles: Record<string, ProfileResult>; today: string; now: number }) {
+export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasKind, hasMetrics, swipes, swipesReady, profiles, patrol, owner, today, now }: { projects: SocialProject[]; posts: Post[]; images: Record<string, string>; aiEnabled: boolean; hasFormat: boolean; hasKind: boolean; hasMetrics: boolean; swipes: Swipe[]; swipesReady: boolean; profiles: Record<string, ProfileResult>; patrol: PatrolData; owner: boolean; today: string; now: number }) {
   const L = useL();
   const router = useRouter();
   const pathname = usePathname();
@@ -109,14 +111,21 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
   const blank = (date = today): Form | null => {
     const project = current?.canEdit ? current : editable[0];
     if (!project) return null;
-    return { id: null, projectId: project.id, platform: "ig", format: "post", kind: null, target: "", date: date < today ? today : date, time: DEFAULT_TIME, topic: "", body: "", note: "", imgs: [], imgsChanged: false, status: null };
+    return { id: null, projectId: project.id, platform: "ig", format: "post", kind: null, target: "", date: date < today ? today : date, time: DEFAULT_TIME, topic: "", body: "", note: "", imgs: [], imgsChanged: false, status: null, template: null };
+  };
+  /** 海巡頁按「用這個模板寫一篇」：開新增面板，平台先選 Threads、帶著模板 */
+  const writeWith = (t: PatrolTemplate) => {
+    const f = blank();
+    if (!f) return;
+    setMsg(null);
+    setForm({ ...f, platform: "threads", format: "post", template: { type: t.type, skeleton: t.skeleton } });
   };
   const edit = (p: Post) => {
     const { date, time } = taipeiParts(p.due_at);
     setMsg(null);
     const m = metricsOf(p);
     setMetrics(Object.fromEntries(METRIC_KEYS.map((k) => [k, m[k] === undefined ? "" : String(m[k])])) as MetricForm);
-    setForm({ id: p.id, projectId: p.project_id, platform: p.platform, format: formatOf(p), kind: isKind(p.kind) ? p.kind : null, target: p.target, date, time, topic: p.topic, body: p.body, note: p.note ?? "", imgs: imagesOf(p).map((path) => ({ path })), imgsChanged: false, status: p.status });
+    setForm({ id: p.id, projectId: p.project_id, platform: p.platform, format: formatOf(p), kind: isKind(p.kind) ? p.kind : null, target: p.target, date, time, topic: p.topic, body: p.body, note: p.note ?? "", imgs: imagesOf(p).map((path) => ({ path })), imgsChanged: false, status: p.status, template: null });
   };
   const close = () => {
     setForm(null);
@@ -152,7 +161,7 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
   const draft = () =>
     startDraft(async () => {
       if (!form) return;
-      const r = await draftPostAction(form.projectId, { platform: form.platform, format: form.format, kind: form.kind, target: form.target, topic: form.topic }).catch(() => ({ ok: false }) as PostResult);
+      const r = await draftPostAction(form.projectId, { platform: form.platform, format: form.format, kind: form.kind, target: form.target, topic: form.topic, template: form.format === "post" ? form.template : null }).catch(() => ({ ok: false }) as PostResult);
       if (!r.ok || !r.draft) return fail(r);
       setForm((f) => (f ? { ...f, body: r.draft! } : f));
       setMsg({ ok: true, text: form.format === "post" ? L("草稿寫好了，改成你的口氣再排定。", "Draft ready. Tweak it before scheduling.") : L("腳本寫好了。開頭挑一個，其他改成你會講的話。", "Script ready. Pick one hook and make the rest sound like you.") });
@@ -259,6 +268,8 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
         <ProfileView projects={projects} current={current} profiles={profiles} aiEnabled={aiEnabled} />
       ) : view === "audit" ? (
         <AuditView projects={projects} current={current} posts={mine} ready={hasMetrics} aiEnabled={aiEnabled} onEdit={(id) => { const p = posts.find((x) => x.id === id); if (p) edit(p); }} />
+      ) : view === "patrol" ? (
+        <PatrolView projects={projects} current={current} data={patrol} owner={owner} aiEnabled={aiEnabled} onUse={writeWith} />
       ) : view === "swipes" ? (
         <SwipeView projects={projects} current={current} swipes={swipes} ready={swipesReady} />
       ) : view === "week" ? (
@@ -438,9 +449,17 @@ export function SocialView({ projects, posts, images, aiEnabled, hasFormat, hasK
                 <span>{L("主題", "Topic")}</span>
                 <input value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value })} placeholder={L("這則要講什麼，越具體越好", "What this one is about. Be specific.")} maxLength={300} />
               </label>
+              {form.template && form.format === "post" && (
+                <div className="soc-tpl-pick">
+                  <span className="soc-kind">{L(`模板：${typeLabel(form.template.type)[0]}`, `Template: ${typeLabel(form.template.type)[1]}`)}</span>
+                  <span className="muted small">{L("AI 會照這個骨架寫", "The AI draft follows this shape")}</span>
+                  <button type="button" className="btn ghost small" onClick={() => setForm({ ...form, template: null })} aria-label={L("不用模板", "Remove the template")}>×</button>
+                  <pre>{form.template.skeleton}</pre>
+                </div>
+              )}
               <div className="soc-form-row end">
                 <button type="button" className="btn small" onClick={draft} disabled={drafting || !aiEnabled || !form.topic.trim()} title={aiEnabled ? undefined : L("還沒設定 ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY isn't set")}>
-                  {drafting ? L("AI 寫作中…", "Writing…") : form.format === "post" ? L("✨ AI 寫草稿", "✨ Draft with AI") : L(`✨ AI 寫${FORMAT_SHORT[form.format][0]}腳本`, `✨ Write the ${FORMAT_SHORT[form.format][1]} script`)}
+                  {drafting ? L("AI 寫作中…", "Writing…") : form.format === "post" ? (form.template ? L("✨ 照模板寫草稿", "✨ Draft from template") : L("✨ AI 寫草稿", "✨ Draft with AI")) : L(`✨ AI 寫${FORMAT_SHORT[form.format][0]}腳本`, `✨ Write the ${FORMAT_SHORT[form.format][1]} script`)}
                 </button>
                 {form.body && <button type="button" className="btn ghost small" onClick={() => copy("form", form.body)}>{copied === "form" ? L("已複製 ✓", "Copied ✓") : L("複製", "Copy")}</button>}
               </div>

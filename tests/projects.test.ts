@@ -67,6 +67,7 @@ describe("專案規則", () => {
     expect(milestoneReminder(TODAY, ms({ due: "2026-11-02" }))).toBe("1");
     expect(milestoneReminder(TODAY, ms({ due: "2026-11-01" }))).toBeNull();
     expect(milestoneReminder(TODAY, ms({ due: "2026-11-05", done: true }))).toBeNull();
+    expect(milestoneReminder(TODAY, ms({ due: null }))).toBeNull(); // 沒日期的待辦不提醒
   });
   it("久沒動：5 天、只問一次直到再過 5 天、暫停的不問", () => {
     const old = new Date(NOW - 6 * DAY).toISOString();
@@ -85,6 +86,11 @@ describe("專案規則", () => {
     expect(parseProjectCommand("fit 階段 不存在", ps, TODAY)).toMatchObject({ action: "error" });
     expect(parseProjectCommand("cafe 下一階段", ps, TODAY)).toMatchObject({ action: "error" });
     expect(parseProjectCommand("fit 里程碑 12/1 正式上架", ps, TODAY)).toMatchObject({ action: "milestone", value: "正式上架", due: "2026-12-01" });
+    // 改叫「待辦」，日期可以不寫
+    expect(parseProjectCommand("fit 待辦 12/1 正式上架", ps, TODAY)).toMatchObject({ action: "milestone", value: "正式上架", due: "2026-12-01" });
+    expect(parseProjectCommand("fit 待辦 整理 說明文件", ps, TODAY)).toMatchObject({ action: "milestone", value: "整理 說明文件", due: null });
+    expect(parseProjectCommand("fit 待辦", ps, TODAY)).toMatchObject({ action: "error" });
+    expect(parseProjectCommand("fit 待辦事項很多怎麼辦", ps, TODAY)).toBeNull();
     expect(parseProjectCommand("fit 記錄：修好地圖", ps, TODAY)).toMatchObject({ action: "log", value: "修好地圖" });
     expect(parseProjectCommand("fit 排程 11/20-11/25 封測第二輪", ps, TODAY)).toMatchObject({ action: "event", value: "封測第二輪", start: "2026-11-20", end: "2026-11-25" });
     expect(parseProjectCommand("fit 排程 12/1 送審", ps, TODAY)).toMatchObject({ action: "event", value: "送審", start: "2026-12-01", end: "2026-12-01" });
@@ -99,7 +105,7 @@ describe("專案規則", () => {
     expect(d.remind7).toEqual(["m1"]);
     expect(d.remind1).toEqual(["m2"]);
     expect(d.staleAsked).toEqual([CAFE_ID]);
-    expect(d.html.indexOf("里程碑提醒")).toBeLessThan(d.html.indexOf("<b>Fit</b>"));
+    expect(d.html.indexOf("待辦快到期")).toBeLessThan(d.html.indexOf("<b>Fit</b>"));
     expect(d.html).toContain("🔴 Fit｜送審（11/03，明天）");
     expect(d.html).toContain("<b>Fit</b>・封測（3/4）");
     expect(d.html).toContain("👉 還沒寫下一步");
@@ -153,7 +159,7 @@ describe("Telegram 更新專案", () => {
     await post("fit 記錄 修好地圖");
     await post("fit 里程碑 12/1 正式上架");
     expect(tables.project_milestones[0]).toMatchObject({ project_id: FIT_ID, title: "正式上架" });
-    expect(tables.project_logs.map((l) => l.text)).toEqual(["下一步：做好友動態", "階段：封測 → 上架審核", "修好地圖", "新增里程碑：正式上架（2026-12-01）"]);
+    expect(tables.project_logs.map((l) => l.text)).toEqual(["下一步：做好友動態", "階段：封測 → 上架審核", "修好地圖", "新增待辦：正式上架（2026-12-01）"]);
     expect(tables.project_logs.every((l) => l.source === "telegram")).toBe(true);
     // 有動作就不算久沒動
     expect(Date.now() - Date.parse(tables.projects[0].last_activity_at)).toBeLessThan(5000);

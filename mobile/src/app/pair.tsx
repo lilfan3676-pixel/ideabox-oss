@@ -3,14 +3,14 @@ import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Icon } from "@/components/Icon";
-import { LOGO, LOGO_INV } from "@/components/Menu";
+import { LOGO_INV } from "@/components/TabBar";
 import { Big, ErrorNote, Txt } from "@/components/ui";
 import { L } from "@/lib/i18n";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { FONT, useStyles, useTheme, type Palette } from "@/lib/theme";
+import { FONT, useTheme, type Palette } from "@/lib/theme";
 import { ApiError, pair } from "@/lib/api";
 import { cleanServer } from "@/lib/session";
 
@@ -33,7 +33,7 @@ function parsePairLink(raw: string): { server: string; code: string } | null {
 
 export default function Pair() {
   const t = useTheme();
-  const st = useStyles(make);
+  const st = useMemo(() => make(t), [t]);
   const insets = useSafeAreaInsets();
   // iPhone 相機直接掃 QR code 時會用 ideabox://pair?server=…&code=… 打開這頁
   const params = useLocalSearchParams<{ server?: string; code?: string }>();
@@ -112,7 +112,7 @@ export default function Pair() {
   const primary = (label: string, icon: "scan" | "key" | "link", onPress: () => void, off?: boolean) => (
     <Pressable onPress={onPress} disabled={off || busy} accessibilityRole="button" style={({ pressed }) => ({ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 10, height: 52, paddingHorizontal: 24, borderRadius: 26, backgroundColor: t.ink, opacity: off ? 0.4 : pressed ? 0.7 : 1 })}>
       {busy ? <ActivityIndicator color={t.bg} /> : <Icon name={icon} size={18} color={t.bg} />}
-      <Txt color={t.bg}>{label}</Txt>
+      <Txt color={t.onMain}>{label}</Txt>
     </Pressable>
   );
   const secondary = (label: string, onPress: () => void) => (
@@ -125,7 +125,7 @@ export default function Pair() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 28, paddingTop: insets.top + 72, paddingBottom: insets.bottom + 24, flexGrow: 1 }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets contentInsetAdjustmentBehavior="never" showsVerticalScrollIndicator={false}>
         {/* 這頁沒有小球：標誌就是它 */}
-        <Image source={t.dark ? LOGO_INV : LOGO} accessibilityLabel={L("ideabox 標誌", "ideabox logo")} style={{ width: 72, height: 72 }} />
+        <Image source={LOGO_INV} accessibilityLabel={L("ideabox 標誌", "ideabox logo")} style={{ width: 72, height: 72 }} />
         <View style={{ marginTop: 48 }}><Big>{L("先跟電腦配對", "Pair with your computer")}</Big></View>
         <Txt muted lh={24} style={{ marginTop: 12, maxWidth: 290 }}>{L("在電腦打開 ideabox 的設定，選「手機 App」，用相機掃畫面上的 QR code", "Open ideabox settings on your computer, choose Mobile app, and scan the QR code on screen")}</Txt>
         {error ? <ErrorNote text={error} /> : null}

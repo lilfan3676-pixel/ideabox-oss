@@ -25,11 +25,12 @@ export type Project = {
   created_at?: string;
 };
 
+/** 待辦（資料表與程式沿用舊名 milestone）：日期可以不填（migration-036），沒日期的不上月曆、不提醒 */
 export type Milestone = {
   id: string;
   project_id: string;
   title: string;
-  due: string; // YYYY-MM-DD
+  due: string | null; // YYYY-MM-DD；沒填＝沒有期限
   done: boolean;
   reminded_7: boolean;
   reminded_1: boolean;
@@ -156,9 +157,17 @@ export function parseRange(s: string, today: string): { start: string; end: stri
   return { start, end };
 }
 
-/** 里程碑提醒：前 7 天、前 1 天各一次（錯過 7 天那次、直接進 1 天內就只提醒 1 天那次） */
+/** 有日期的待辦（月曆、時程表、時間軸只畫這種） */
+export type DatedMilestone = Milestone & { due: string };
+export const withDate = (ms: Milestone[]): DatedMilestone[] => ms.filter((m): m is DatedMilestone => !!m.due);
+
+/** 有日期、還沒做完的待辦，照日期由近到遠（沒日期的不算） */
+export const datedOpen = <T extends Pick<Milestone, "due" | "done">>(ms: T[]): (T & { due: string })[] =>
+  ms.filter((m): m is T & { due: string } => !m.done && !!m.due).sort((a, b) => a.due.localeCompare(b.due));
+
+/** 待辦提醒：前 7 天、前 1 天各一次（錯過 7 天那次、直接進 1 天內就只提醒 1 天那次） */
 export function milestoneReminder(today: string, m: Pick<Milestone, "due" | "done" | "reminded_7" | "reminded_1">): "7" | "1" | null {
-  if (m.done) return null;
+  if (m.done || !m.due) return null;
   const days = daysBetween(today, m.due);
   if (days < 0) return null;
   if (days <= 1) return m.reminded_1 ? null : "1";
@@ -183,12 +192,15 @@ export type ProjectCommand =
   | { project: Project; action: "next"; value: string }
   | { project: Project; action: "stage"; value: number }
   | { project: Project; action: "log"; value: string }
-  | { project: Project; action: "milestone"; value: string; due: string }
+  | { project: Project; action: "milestone"; value: string; due: string | null }
   | { project: Project; action: "event"; value: string; start: string; end: string; time: string | null }
   | { project: Project; action: "post"; value: PostCommand }
+  | { project: Project; action: "sprint"; value: string; due: string; time: string | null }
+  | { project: Project; action: "sprintOff" }
   | { project: Project; action: "error"; value: string };
 
-const ACTIONS: Record<string, "next" | "stage" | "advance" | "log" | "milestone" | "event" | "post"> = {
+const ACTIONS: Record<string, "next" | "stage" | "advance" | "log" | "milestone" | "event" | "post" | "sprint"> = {
+  衝刺: "sprint",
   排程: "event",
   發文: "post",
   下一步: "next",
@@ -199,15 +211,17 @@ const ACTIONS: Record<string, "next" | "stage" | "advance" | "log" | "milestone"
   紀錄: "log",
   日誌: "log",
   里程碑: "milestone",
+  待辦: "milestone",
 };
 
 /**
- * 「app 下一步 做好友動態」「app 階段 上架審核」「app 下一階段」「app 記錄 修好地圖」「app 里程碑 12/1 正式上架」（app = 專案短名）
+ * 「app 下一步 做好友動態」「app 階段 上架審核」「app 下一階段」「app 記錄 修好地圖」「app 待辦 12/1 正式上架」「app 待辦 整理說明文件」（日期可以不寫；舊的「里程碑」也認得；app = 專案短名）
+ * 「app 衝刺 11/30 12:00 報名截止」＝到那天之前每天早晚提醒今天該做什麼（lib/sprint.ts），「app 衝刺 取消」停止
  * 開頭不是專案名、或第二個詞不是指令就回傳 null（交給點子庫／其他存放地點分流）
  */
 export function parseProjectCommand(text: string, projects: Project[], today: string): ProjectCommand | null {
   // 指令後面要接空白、冒號或直接結束：「app 下一階段很重要的功能」是點子，不是指令
-  const m = text.trim().match(/^(\S+)\s+(下一步|進下一階段|下一階段|階段|記錄|紀錄|日誌|里程碑|排程|發文)(?:[\s：:]+([\s\S]*))?$/);
+  const m = text.trim().match(/^(\S+)\s+(下一步|進下一階段|下一階段|階段|記錄|紀錄|日誌|里程碑|待辦|排程|發文|衝刺)(?:[\s：:]+([\s\S]*))?$/);
   if (!m) return null;
   const key = m[1].toLowerCase();
   const project = projects.find((p) => p.slug === key || p.name.toLowerCase() === key);
@@ -226,10 +240,19 @@ export function parseProjectCommand(text: string, projects: Project[], today: st
     return { project, action: "stage", value: n };
   }
   if (action === "milestone") {
+    if (!rest) return { project, action: "error", value: "格式：待辦 12/1 正式上架（日期可以不寫：待辦 整理說明文件）" };
+    // 第一個詞是日期就當期限，不是就整句都是待辦的內容
     const mm = rest.match(/^(\S+)\s+([\s\S]+)$/);
     const due = mm ? parseDue(mm[1], today) : null;
-    if (!mm || !due) return { project, action: "error", value: "格式：里程碑 12/1 正式上架" };
-    return { project, action: "milestone", value: mm[2].trim().slice(0, 80), due };
+    return { project, action: "milestone", value: (due ? mm![2] : rest).trim().slice(0, 80), due };
+  }
+  if (action === "sprint") {
+    if (/^(取消|停止|結束|關掉|完成)$/.test(rest)) return { project, action: "sprintOff" };
+    // 「衝刺 11/30 報名截止」「衝刺 11/30 12:00 報名截止」：到那天之前每天提醒今天該做什麼
+    const mm = rest.match(/^(\S+)(?:\s+(\d{1,2}[:：]\d{2}))?(?:\s+([\s\S]+))?$/);
+    const due = mm ? parseDue(mm[1], today) : null;
+    if (!due) return { project, action: "error", value: `格式：衝刺 11/30 12:00 報名截止（時間可以不寫）；停止：${project.slug} 衝刺 取消` };
+    return { project, action: "sprint", value: (mm![3] ?? "期限").trim().slice(0, 40), due, time: mm![2] ? parseTime(mm![2]) : null };
   }
   if (action === "post") {
     const cmd = parsePostCommand(rest, today);
@@ -256,7 +279,7 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 
 export type Digest = { html: string; remind7: string[]; remind1: string[]; staleAsked: string[] };
 
-/** 早上 8 點的訊息：各專案做到哪、下一步、快到的里程碑、久沒動的專案 */
+/** 早上 8 點的訊息：各專案做到哪、下一步、快到期的待辦、久沒動的專案 */
 export function buildDigest(projects: Project[], milestones: Milestone[], today: string, now: number, appUrl?: string | null, extra: string[] = []): Digest {
   const remind7: string[] = [];
   const remind1: string[] = [];
@@ -264,9 +287,9 @@ export function buildDigest(projects: Project[], milestones: Milestone[], today:
   const active = projects.filter((p) => p.status === "active");
   const lines: string[] = ["☀️ <b>早安，今天的專案進度</b>"];
 
-  // 里程碑提醒放最上面
+  // 快到期的待辦放最上面
   const alerts: string[] = [];
-  for (const m of [...milestones].sort((a, b) => a.due.localeCompare(b.due))) {
+  for (const m of datedOpen(milestones)) {
     const p = projects.find((x) => x.id === m.project_id);
     if (!p || p.status !== "active") continue; // 暫停、完成的專案不提醒
     const r = milestoneReminder(today, m);
@@ -276,18 +299,18 @@ export function buildDigest(projects: Project[], milestones: Milestone[], today:
     const when = days === 0 ? "就是今天" : days === 1 ? "明天" : `還有 ${days} 天`;
     alerts.push(`${r === "1" ? "🔴" : "🟡"} ${esc(p.name)}｜${esc(m.title)}（${m.due.slice(5).replace("-", "/")}，${when}）`);
   }
-  if (alerts.length) lines.push("", "⏰ <b>里程碑提醒</b>", ...alerts);
+  if (alerts.length) lines.push("", "⏰ <b>待辦快到期</b>", ...alerts);
 
   for (const p of active) {
-    const next = milestones
-      .filter((m) => m.project_id === p.id && !m.done && m.due >= today)
-      .sort((a, b) => a.due.localeCompare(b.due))[0];
+    const open = milestones.filter((m) => m.project_id === p.id && !m.done);
+    const next = datedOpen(open).find((m) => m.due >= today);
     lines.push(
       "",
       `<b>${esc(p.name)}</b>・${esc(stageName(p))}（${clampStage(p.stage, p.stages) + 1}/${p.stages.length || 1}）`,
       `👉 ${p.next_step ? esc(p.next_step) : "還沒寫下一步"}`,
     );
     if (next) lines.push(`📅 ${esc(next.title)}：${next.due.slice(5).replace("-", "/")}（${daysBetween(today, next.due)} 天後）`);
+    if (open.length > (next ? 1 : 0)) lines.push(`📋 待辦還有 ${open.length} 件`);
   }
   if (!active.length) lines.push("", "目前沒有進行中的專案。");
 

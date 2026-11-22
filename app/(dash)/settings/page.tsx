@@ -212,8 +212,8 @@ async function AppSection() {
       <h3>{L("手機 App", "Phone app")}</h3>
       <p className="muted small">
         {L(
-          "App 只能看、不能改。推送：有填時間的排程開始前 30 分鐘、早上 8 點的今日排程與里程碑提醒、產品掛掉／恢復。Telegram 照常會收到。",
-          "The app is read-only. Pushes: 30 min before timed schedule items, the 8 am schedule and milestone reminders, and product outages / recoveries. Telegram keeps working as before.",
+          "App 只能看、不能改。推送：有填時間的排程開始前 30 分鐘、早上 8 點的今日排程與待辦到期提醒、產品掛掉／恢復。Telegram 照常會收到。",
+          "The app is read-only. Pushes: 30 min before timed schedule items, the 8 am schedule and to-do due reminders, and product outages / recoveries. Telegram keeps working as before.",
         )}
       </p>
       {!ready ? (

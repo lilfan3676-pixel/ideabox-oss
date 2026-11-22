@@ -7,7 +7,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { L } from "@/lib/i18n";
 import { reduceMotion } from "@/lib/motion";
 import { useTheme } from "@/lib/theme";
-import { dockBottom, LOGO, LOGO_INV } from "./Menu";
+import { getPrefs } from "@/lib/prefs";
+import { DOCK_H, dockBottom, LOGO, LOGO_INV } from "./TabBar";
 import { Orb } from "./Orb";
 
 const SIZE = 140;
@@ -22,7 +23,7 @@ function seeded(seed: number) {
   };
 }
 
-/** toToday：已經配對、會進到今天頁，小球才滑到右下角；還沒配對就原地淡出 */
+/** toToday：已經配對、會進到今天頁，小球才滑到進度環中間；還沒配對就原地淡出 */
 export function Launch({ onDone, toToday }: { onDone: () => void; toToday: boolean }) {
   const t = useTheme();
   const { width: W, height: H } = useWindowDimensions();
@@ -112,11 +113,13 @@ export function Launch({ onDone, toToday }: { onDone: () => void; toToday: boole
   }, [gather, W, H]);
 
   if (gone) return null;
-  // 今天頁那顆小球的位置與大小（跟今天頁同一套算法）
-  const k = Math.min(1, W / 390, (H - insets.top - insets.bottom) / 720);
-  const ball = Math.round(312 * k);
-  const tx = W + Math.round(76 * k) - ball / 2 - W / 2;
-  const ty = H - (dockBottom(insets.bottom) + 96) - ball / 2 - H / 2;
+  // 小球最後落在「小助手」平常停的位置（跟 components/Assistant.tsx 同一套算法：停在哪一邊、多高、多大都照設定）
+  const prefs = getPrefs();
+  const ball = ({ s: 48, m: 60, l: 76 } as const)[prefs.orbSize] ?? 60;
+  const maxY = H - (dockBottom(insets.bottom) + DOCK_H + 14) - ball;
+  const restY = Math.min(maxY, Math.max(insets.top + 56, prefs.orbY * H));
+  const tx = (prefs.orbSide === "left" ? 14 : W - 14 - ball) + ball / 2 - W / 2;
+  const ty = restY + ball / 2 - H / 2;
   const center = { position: "absolute" as const, left: W / 2 - SIZE / 2, top: H / 2 - SIZE / 2 };
   return (
     <Pressable onPress={() => finish(true)} accessibilityRole="button" accessibilityLabel={L("ideabox 開場動畫，點一下跳過", "ideabox intro. Tap to skip")} style={[StyleSheet.absoluteFill, { zIndex: 1000 }]}>

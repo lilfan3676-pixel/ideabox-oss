@@ -14,7 +14,8 @@ AccessibilityInfo.addEventListener("reduceMotionChanged", (v) => {
 });
 export const reduceMotion = () => reduce;
 
-export const SPRING = { useNativeDriver: true, damping: 17, stiffness: 190, mass: 0.9 } as const;
+/** 浮出來的東西（小助手的泡泡）用的彈簧：幾乎不過頭，不會彈來彈去 */
+export const SPRING = { useNativeDriver: true, damping: 24, stiffness: 210, mass: 0.9 } as const;
 /** 跟手的東西放手後用的彈簧：比 SPRING 緊，很快到位、只晃一點點（翻頁、拉出來的清單） */
 export const SNAP = { useNativeDriver: true, damping: 28, stiffness: 300, mass: 1 } as const;
 

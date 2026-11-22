@@ -57,10 +57,12 @@ export async function updateProject(p: Project, patch: Partial<Project>, source:
   for (const n of notes) await db().from("project_logs").insert({ project_id: p.id, text: n, source });
 }
 
-export async function addMilestone(projectId: string, title: string, due: string, source: LogSource, who?: string) {
-  const { error } = await db().from("project_milestones").insert({ project_id: projectId, title: title.slice(0, 80), due });
+/** 新增待辦（資料表沿用舊名 project_milestones）；日期可以不填（要先執行 migration-036）。回傳新的 id */
+export async function addMilestone(projectId: string, title: string, due: string | null, source: LogSource, who?: string): Promise<string | null> {
+  const { data, error } = await db().from("project_milestones").insert({ project_id: projectId, title: title.slice(0, 80), due: due || null }).select("id").single();
   if (error) throw error;
-  await logActivity(projectId, `${who ? `${who}：` : ""}新增里程碑：${title}（${due}）`, source);
+  await logActivity(projectId, `${who ? `${who}：` : ""}新增待辦：${title}${due ? `（${due}）` : ""}`, source);
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 /** 新增排程（同專案、同標題、同開始日的不重複加）；回傳新的 id，重複或失敗回傳 null */
@@ -93,15 +95,16 @@ export async function runProjectTick(now = Date.now()): Promise<{ sent: boolean;
     if (d.remind1.length) await db().from("project_milestones").update({ reminded_7: true, reminded_1: true }).in("id", d.remind1);
     if (d.staleAsked.length) await db().from("projects").update({ stale_asked_at: new Date(now).toISOString() }).in("id", d.staleAsked);
   }
-  // 手機 App：今天的排程、里程碑提醒（推送失敗不影響 Telegram）
+  // 手機 App：今天的排程、待辦快到期的提醒（推送失敗不影響 Telegram）
   const { pushTodayEvents, sendPushSafe } = await import("./app");
   await pushTodayEvents(now);
   const names = new Map(projects.map((p) => [p.id, p.name]));
   for (const m of milestones.filter((x) => d.remind1.includes(x.id) || d.remind7.includes(x.id))) {
+    if (!m.due) continue;
     const days = daysBetween(today, m.due);
     const label = days <= 0 ? "今天" : days === 1 ? "明天" : `還有 ${days} 天`;
     await sendPushSafe(
-      { title: `📅 ${label}：${m.title}`, body: `${names.get(m.project_id) ?? ""} 里程碑（${m.due.slice(5).replace("-", "/")}）`.trim(), data: { screen: "today" } },
+      { title: `📅 ${label}：${m.title}`, body: `${names.get(m.project_id) ?? ""} 待辦（${m.due.slice(5).replace("-", "/")}）`.trim(), data: { screen: "today" } },
       { projectIds: [m.project_id], pages: ["projects", "calendar"] },
     );
   }
@@ -138,9 +141,17 @@ export async function handleProjectText(text: string): Promise<string | null> {
     }
     case "post":
       return (await import("./posts")).addPostFromTelegram(p, cmd.value);
+    case "sprint":
+      return (await import("./sprint")).startSprint(p, cmd.due, cmd.value, cmd.time);
+    case "sprintOff":
+      return (await (await import("./sprint")).stopSprint(p.id)) ? `🏁 ${esc(p.name)} 的每天提醒停了` : `ℹ️ ${esc(p.name)} 本來就沒有在衝刺`;
     case "milestone":
-      await addMilestone(p.id, cmd.value, cmd.due, "telegram");
-      return `📅 ${esc(p.name)} 新增里程碑：${esc(cmd.value)}（${cmd.due}），前 7 天和前 1 天會提醒你`;
+      try {
+        await addMilestone(p.id, cmd.value, cmd.due, "telegram");
+      } catch {
+        return cmd.due ? `⚠️ ${esc(p.name)}：待辦存不進去，請稍後再試。` : "⚠️ 沒有日期的待辦要先在 ideabox 的 Supabase 執行 migration-036-todos.sql；或加上日期：待辦 12/1 正式上架";
+      }
+      return cmd.due ? `📋 ${esc(p.name)} 新增待辦：${esc(cmd.value)}（${cmd.due}），前 7 天和前 1 天會提醒你` : `📋 ${esc(p.name)} 新增待辦：${esc(cmd.value)}`;
   }
 }
 

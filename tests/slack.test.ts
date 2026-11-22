@@ -223,6 +223,37 @@ describe("讀 Slack 更新專案", () => {
     expect(slackCalls.filter((c) => c === "conversations.join")).toHaveLength(1); // 只加入公開的 cafe
   });
 
+  it("待辦：回報說做完的自動打勾、提到還要做的自動新增（可以沒日期）；按「改回來」取消打勾並刪掉新增的", async () => {
+    const T1 = "aaaaaaaa-0000-0000-0000-000000000001";
+    const T2 = "aaaaaaaa-0000-0000-0000-000000000002";
+    tables.project_milestones.push(
+      { id: T1, project_id: FIT_ID, title: "修好地圖火焰", due: null, done: false, reminded_7: false, reminded_1: false },
+      { id: T2, project_id: FIT_ID, title: "送審", due: "2026-11-10", done: false, reminded_7: false, reminded_1: false },
+      { id: "aaaaaaaa-0000-0000-0000-000000000003", project_id: CAFE_ID, title: "別的專案", due: null, done: false, reminded_7: false, reminded_1: false },
+    );
+    // 有日期的排前面：1＝送審、2＝修好地圖火焰；9 是亂給的編號
+    aiInput = { log: "修好地圖火焰", next_step: "", stage: "", done: [2, 9], milestones: [{ title: "整理說明文件", due: "" }, { title: "送審", due: "" }, { title: "修好地圖火焰", due: "" }] };
+    const { runSlackSync } = await import("@/lib/slack");
+    await runSlackSync(Date.parse("2026-11-02T04:00:00Z"));
+    expect(aiBodies[0].system).toContain("1. 送審（2026-11-10）\n2. 修好地圖火焰");
+    expect(aiBodies[0].system).not.toContain("別的專案");
+    expect(tables.project_milestones.find((m) => m.id === T1)!.done).toBe(true);
+    expect(tables.project_milestones.find((m) => m.id === T2)!.done).toBe(false);
+    // 已經有的、這次才做完的都不會再加一次
+    const added = tables.project_milestones.filter((m) => m.project_id === FIT_ID && ![T1, T2].includes(m.id as string));
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ title: "整理說明文件", due: null, done: false });
+    expect(tables.project_logs.map((l) => l.text)).toEqual(expect.arrayContaining(["完成待辦：修好地圖火焰", "新增待辦：整理說明文件"]));
+    const notice = sent.filter((s) => s.method === "sendMessage").at(-1)!.body;
+    expect(notice.text).toContain("✅ 待辦打勾：修好地圖火焰");
+    expect(notice.text).toContain("📋 新增待辦：整理說明文件");
+
+    await press(buttonsOf(notice).find((b) => b.text === "↩️ 改回來")!.callback_data);
+    expect(tables.project_milestones.find((m) => m.id === T1)!.done).toBe(false);
+    expect(tables.project_milestones.filter((m) => m.project_id === FIT_ID)).toHaveLength(2);
+    expect(sent.filter((s) => s.method === "sendMessage").at(-1)!.body.text).toContain("自動打勾的待辦也取消了");
+  });
+
   it("只有日誌、沒改到東西就不傳 Telegram", async () => {
     aiInput = { log: "整理程式", next_step: "", stage: "", milestones: [] };
     const { runSlackSync } = await import("@/lib/slack");

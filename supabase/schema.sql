@@ -51,7 +51,7 @@ create table if not exists public.project_milestones (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects (id) on delete cascade,
   title text not null,
-  due date not null,
+  due date,                                  -- 待辦的日期，可以不填
   done boolean not null default false,
   reminded_7 boolean not null default false,
   reminded_1 boolean not null default false,
@@ -249,6 +249,21 @@ create table if not exists public.radar_reports (
 );
 create index if not exists radar_reports_project_idx on public.radar_reports (project_id, created_at desc);
 alter table public.radar_reports enable row level security;
+
+-- ========== Threads 海巡 ==========
+create table if not exists public.patrol_reports (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references public.projects (id) on delete cascade,  -- 空的＝不限領域的熱門
+  created_at timestamptz not null default now(),
+  finished_at timestamptz,
+  status text not null default 'running' check (status in ('running', 'done', 'failed')),
+  keywords text[] not null default '{}',
+  post_count int not null default 0,
+  result jsonb,
+  error text
+);
+create index if not exists patrol_reports_scope_idx on public.patrol_reports (project_id, created_at desc);
+alter table public.patrol_reports enable row level security;
 
 -- ========== 成本 ==========
 create table if not exists public.expenses (

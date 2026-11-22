@@ -27,7 +27,9 @@ export async function POST(req: NextRequest) {
     if (taipeiWeekday() === 0 || req.nextUrl.searchParams.get("force") === "radar") {
       after(async () => {
         const { runWeeklyRadar } = await import("@/lib/radar");
-        await runWeeklyRadar().catch((err) => console.error("radar", err));
+        const { runWeeklyPatrol } = await import("@/lib/patrol");
+        // 專案的 Threads 海巡跟著雷達用同一批貼文；不限領域的熱門另外抓一次，兩邊同時跑
+        await Promise.all([runWeeklyRadar().catch((err) => console.error("radar", err)), runWeeklyPatrol().catch((err) => console.error("patrol", err))]);
       });
     }
     return NextResponse.json({ ok: true, ...r });

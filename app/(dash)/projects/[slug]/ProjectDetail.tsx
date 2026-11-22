@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useL, useLang } from "@/app/LangProvider";
 import { daysBetween } from "@/lib/dates";
 import type { MonitorProduct } from "@/lib/modules/types";
@@ -10,9 +10,12 @@ import type { AgentSession } from "@/lib/officeLogic";
 import type { RadarReport } from "@/lib/radarLogic";
 import { ProjectLinks } from "../ProjectLinks";
 import { RadarSection } from "./RadarSection";
-import { Delta, Kpi, KpiRow, SidePanel } from "../../Insight";
+import { TodoList } from "../TodoList";
+import { setNextStep, type ProjectResult } from "../actions";
+import { useAccess } from "../../AccessContext";
+import { editsProject } from "@/lib/accessLogic";
 import { projectDetailInsights } from "@/lib/insights";
-import { stageName, stageSegments, type LogSource, type Milestone, type Project, type ProjectLog } from "@/lib/projectLogic";
+import { stageName, stageSegments, withDate, type DatedMilestone, type LogSource, type Milestone, type Project, type ProjectLog } from "@/lib/projectLogic";
 
 export type ProductData = {
   info: MonitorProduct | null; // 對應的監控產品（沒有就是 null）
@@ -72,8 +75,15 @@ export function ProjectDetail({
   const users = usersSeries.length ? usersSeries[usersSeries.length - 1] : null;
   const active = activeSeries.length ? activeSeries[activeSeries.length - 1] : null;
   const adopted = ideas.filter((i) => i.adopted).length;
-  const mmdd = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const nextStep = p.next_step || L("還沒寫下一步", "No next step yet");
+  const access = useAccess();
+  const edit = editsProject(access, p.id); // 待辦：你和「可編輯」的合夥人；下一步只有你能改
+  const openCount = milestones.filter((x) => !x.done).length;
+  const [editingNext, setEditingNext] = useState(false);
+  const [err, setErr] = useState("");
+  const [pending, start] = useTransition();
+  const report = (r: ProjectResult) => setErr(r.ok ? "" : r.error ?? L("沒有存成功，請再試一次", "Couldn’t save — please try again"));
+  const run = (fn: () => Promise<ProjectResult>) => start(async () => report(await fn().catch(() => ({ ok: false }))));
 
   return (
     <div className="project-detail stagger" style={{ ["--proj" as string]: color }}>
@@ -102,55 +112,55 @@ export function ProjectDetail({
 
       {panel ?? (
       <>
-      <KpiRow label={L("重點數字", "Key numbers")}>
-        {users !== null ? (
-          <Kpi pop label={L(...m.users)} value={users.toLocaleString()} hint={lastDaily?.new7 != null ? L(`這 7 天 +${lastDaily.new7}`, `+${lastDaily.new7} in 7 days`) : L("最近 90 天", "Last 90 days")} data={usersSeries} />
-        ) : (
-          <Kpi pop label={L("目前階段", "Current stage")} value={<span className="kpi-text">{stageName(p)}</span>} hint={L(`第 ${p.stage + 1}／${p.stages.length} 階段${current ? `・已經 ${current.days} 天` : ""}`, `Stage ${p.stage + 1}/${p.stages.length}${current ? ` · ${current.days} days` : ""}`)} />
-        )}
-        {active !== null ? (
-          <Kpi label={L(...m.active7)} value={active.toLocaleString()} hint={users ? L(`佔全部 ${Math.round((active / users) * 100)}%`, `${Math.round((active / users) * 100)}% of all`) : " "} data={activeSeries} />
-        ) : showIdeas ? (
-          <Kpi label={L("這個專案的點子", "Ideas")} value={ideas.length} hint={L(`已採用 ${adopted} 則`, `${adopted} adopted`)} />
-        ) : (
-          <Kpi label={L("里程碑", "Milestones")} value={`${ins.msDone}／${ins.msTotal}`} hint={L("已完成／全部", "done / total")} />
-        )}
-        <Kpi
-          label={L("本週工作日誌", "Logs this week")}
-          value={ins.logsWeek}
-          hint={<><Delta now={ins.logsWeek} prev={ins.logsLastWeek} flat={L("跟上週一樣", "Same as last week")} />{ins.logsWeek !== ins.logsLastWeek ? L(" 比上週", " vs last week") : ""}</>}
-          data={ins.weekly}
-        />
-        <Kpi
-          tone={ins.overdue ? "danger" : ins.next && ins.next.days <= 3 ? "warn" : ""}
-          label={L("下一個里程碑", "Next milestone")}
-          value={ins.next ? (ins.next.days === 0 ? L("今天", "Today") : <>{ins.next.days}<span className="kpi-unit"> {L("天後", "days")}</span></>) : "—"}
-          hint={ins.next ? `${mmdd(ins.next.due)} ${ins.next.title}${ins.overdue ? L(`・另有 ${ins.overdue} 個過期`, ` · ${ins.overdue} overdue`) : ""}` : ins.overdue ? L(`${ins.overdue} 個已過期`, `${ins.overdue} overdue`) : L("沒有排里程碑", "None scheduled")}
-        />
-      </KpiRow>
-
       {p.description && <p className="glass pd-desc">{p.description}</p>}
+      {err && <p className="error small" role="alert">{err}</p>}
 
-      <div className="page-split pd-split">
-        <div className="page-main pd-main">
-          <div className="glass pd-next m-only">
+      {/* 減壓改版（2026-11-21）：左邊只放「下一步」和待辦；右邊是階段，其他（日誌、數據、點子、階段歷程、話題雷達）預設收起來 */}
+      <div className="pd-calm">
+        <div className="pd-col">
+          <div className="glass pd-big-next">
             <span className="muted small">{L("下一步", "Next step")}</span>
-            <b>👉 {nextStep}</b>
+            {editingNext ? (
+              <form
+                className="inline-edit"
+                action={(fd) => {
+                  setEditingNext(false);
+                  run(() => setNextStep(p.id, String(fd.get("next") ?? "")));
+                }}
+              >
+                <input name="next" defaultValue={p.next_step ?? ""} autoFocus maxLength={200} aria-label={L("下一步", "Next step")} onKeyDown={(e) => e.key === "Escape" && setEditingNext(false)} />
+                <button className="btn small primary" type="submit">{L("儲存", "Save")}</button>
+              </form>
+            ) : (
+              <p>
+                {nextStep}
+                {access.owner && <button type="button" className="link-btn small" disabled={pending} onClick={() => setEditingNext(true)}>{L("修改", "Edit")}</button>}
+              </p>
+            )}
           </div>
 
-          <section className="glass pd-card">
-            <h2 className="detail-h">{L("階段歷程", "Stage history")}</h2>
-            <StageChart segments={segments} stages={p.stages} milestones={milestones} today={today} now={now} />
+          <section className="glass pd-todos" aria-label={L("待辦", "To-dos")}>
+            <div className="pd-todos-head">
+              <h2>{L("待辦", "To-dos")}{openCount > 0 && <span className="muted"> {openCount}</span>}</h2>
+              <span className="muted small">{L("Slack 回報說做完的會自動打勾", "Ticked automatically from Slack reports")}</span>
+            </div>
+            <TodoList projectId={p.id} milestones={milestones} today={today} edit={edit} report={report} rest={5} />
           </section>
+        </div>
 
-          {showProduct && <ProductSection product={product} />}
+        <div className="pd-col">
+          <div className="glass pd-stage">
+            <span className="muted small">{L("階段", "Stage")}</span>
+            <div>
+              <b>{stageName(p) || "—"}</b>
+              <span className="muted small">　{L(`第 ${p.stage + 1}／${p.stages.length} 階段`, `Stage ${p.stage + 1}/${p.stages.length}`)}{current ? L(`・待了 ${current.days} 天`, ` · ${current.days} days`) : ""}</span>
+            </div>
+            <div className="pd-steps" aria-hidden>
+              {p.stages.map((st, n) => <span key={st} className={n <= p.stage ? "on" : ""} />)}
+            </div>
+          </div>
 
-          {showIdeas && <div className="m-only"><IdeasSection ideas={ideas} /></div>}
-
-          {showRadar && <RadarSection projectId={p.id} keywords={p.radar_keywords ?? []} reports={radar.reports} ready={radar.ready} enabled={radar.enabled} now={now} />}
-
-          <section className="glass pd-card">
-            <h2 className="detail-h">{L(`工作日誌（${logs.length}）`, `Work log (${logs.length})`)}</h2>
+          <Fold title={L("最近做了什麼", "Recent work")} hint={L(`本週 ${ins.logsWeek} 筆・共 ${logs.length} 筆`, `${ins.logsWeek} this week · ${logs.length} total`)}>
             {logs.length ? (
               <ul className="pd-log">
                 {logs.map((l) => (
@@ -164,44 +174,33 @@ export function ProjectDetail({
             ) : (
               <p className="muted small">{L("還沒有紀錄", "Nothing yet")}</p>
             )}
-          </section>
-        </div>
+          </Fold>
 
-        {/* 電腦版右欄：下一步、里程碑、分數最高的點子（手機版這些在主欄原本的位置） */}
-        <aside className="page-aside d-only" aria-label={L("專案概況", "Project overview")}>
-          <SidePanel className="nudge" title={L("下一步", "Next step")}>
-            <p>{nextStep}</p>
-          </SidePanel>
-          <SidePanel title={L("里程碑", "Milestones")} action={ins.msTotal > 0 ? <span className="muted small">{L(`完成 ${ins.msDone}／${ins.msTotal}`, `${ins.msDone}/${ins.msTotal} done`)}</span> : undefined}>
-            {ins.upcoming.length ? (
-              ins.upcoming.slice(0, 6).map((ms) => (
-                <div className={`side-row ${ms.days < 0 ? "late" : ""}`} key={ms.id}>
-                  <span className="side-date">{mmdd(ms.due)}</span>
-                  <span className="grow">
-                    <span className="side-title">{ms.title}</span>
-                    <span className="muted small">{ms.days < 0 ? L(`過期 ${-ms.days} 天`, `${-ms.days} days overdue`) : ms.days === 0 ? L("今天", "Today") : L(`${ms.days} 天後`, `in ${ms.days} days`)}</span>
-                  </span>
-                </div>
-              ))
-            ) : (
-              <p className="muted small">{ins.msTotal ? L("里程碑都完成了", "All milestones done") : L("還沒有里程碑。在專案卡片上新增。", "No milestones yet. Add one on the project card.")}</p>
-            )}
-          </SidePanel>
-          {showIdeas && (
-            <SidePanel title={L("這個專案的點子", "Ideas")} action={ideas.length > 0 ? <Link href={`/?project=${p.id}`} className="small">{L(`全部 ${ideas.length} 則`, `All ${ideas.length}`)}</Link> : undefined}>
-              {ideas.length ? (
-                ideas.slice(0, 5).map((i) => (
-                  <div className="side-row" key={i.id}>
-                    <span className="grow"><span className="side-title clamp">{i.summary || i.content?.slice(0, 60) || i.url}</span></span>
-                    <b className={i.adopted ? "ok-text" : ""} title={i.adopted ? L("已採用", "Adopted") : undefined}>{i.score_total ?? "—"}{i.adopted ? " ✓" : ""}</b>
-                  </div>
-                ))
-              ) : (
-                <p className="muted small">{L("還沒有點子指定給這個專案。", "No ideas assigned yet.")}</p>
-              )}
-            </SidePanel>
+          {showProduct && (
+            <Fold
+              title={L("產品數據", "Product data")}
+              hint={active !== null ? `${L(...m.active7)} ${active.toLocaleString()}` : users !== null ? `${L(...m.users)} ${users.toLocaleString()}${lastDaily?.new7 != null ? L(`・這 7 天 +${lastDaily.new7}`, ` · +${lastDaily.new7} in 7 days`) : ""}` : L("還沒接監控", "Not connected")}
+            >
+              <ProductSection product={product} />
+            </Fold>
           )}
-        </aside>
+
+          {showIdeas && (
+            <Fold title={L("這個專案的點子", "Ideas")} hint={L(`${ideas.length} 則・已採用 ${adopted}`, `${ideas.length} · ${adopted} adopted`)}>
+              <IdeasSection ideas={ideas} />
+            </Fold>
+          )}
+
+          <Fold title={L("階段歷程", "Stage history")} hint={segments.length > 1 ? L(`走過 ${segments.length - 1} 個階段`, `${segments.length - 1} stages so far`) : ""}>
+            <StageChart segments={segments} stages={p.stages} milestones={withDate(milestones)} today={today} now={now} />
+          </Fold>
+
+          {showRadar && (
+            <Fold title={L("話題雷達", "Topic radar")} hint={(p.radar_keywords ?? []).length ? L(`${(p.radar_keywords ?? []).length} 個關鍵字`, `${(p.radar_keywords ?? []).length} keywords`) : L("還沒設關鍵字", "No keywords yet")}>
+              <RadarSection projectId={p.id} keywords={p.radar_keywords ?? []} reports={radar.reports} ready={radar.ready} enabled={radar.enabled} now={now} />
+            </Fold>
+          )}
+        </div>
       </div>
       </>
       )}
@@ -209,11 +208,21 @@ export function ProjectDetail({
   );
 }
 
+/** 預設收起來的區塊：標題旁一句現況，點了才展開 */
+function Fold({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <details className="glass pd-fold">
+      <summary><b>{title}</b>{hint ? <span className="muted small">{hint}</span> : null}</summary>
+      <div className="pd-fold-body">{children}</div>
+    </details>
+  );
+}
+
 const DEFAULT_METRICS = { users: ["總用戶", "Total users"] as [string, string], active7: ["7 天活躍", "Active in 7d"] as [string, string], new7: ["7 天新增", "New in 7d"] as [string, string] };
 
-// ---------- 階段歷程：橫向時間條＋里程碑 ----------
+// ---------- 階段歷程：橫向時間條＋有日期的待辦 ----------
 
-function StageChart({ segments, stages, milestones, today, now }: { segments: ReturnType<typeof stageSegments>; stages: string[]; milestones: Milestone[]; today: string; now: number }) {
+function StageChart({ segments, stages, milestones, today, now }: { segments: ReturnType<typeof stageSegments>; stages: string[]; milestones: DatedMilestone[]; today: string; now: number }) {
   const L = useL();
   const start = Date.parse(segments[0].from);
   const lastDue = milestones.reduce((m, x) => Math.max(m, Date.parse(`${x.due}T12:00:00+08:00`)), 0);

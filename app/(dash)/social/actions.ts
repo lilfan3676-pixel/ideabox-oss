@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireProjectEdit } from "@/lib/auth";
+import { after } from "next/server";
+import { requireOwner, requireProjectEdit } from "@/lib/auth";
 import { getL } from "@/lib/i18nServer";
 import { sniffImageType, storeImage } from "@/lib/images";
 import { taipeiDate } from "@/lib/dates";
@@ -15,6 +16,8 @@ import type { CommentOut, DmOut, ProfileResult, ReplyOut } from "@/lib/engageLog
 import type { Metrics } from "@/lib/auditLogic";
 import { createPost, deletePost, draftEnabled, draftPost, getPost, imageToken, listPosts, postponePost, resolveImages, setPostStatus, updatePost, type PostInput } from "@/lib/posts";
 import { getProject } from "@/lib/projects";
+import { PATROL_MIGRATION, generalScope, openPatrol, patrolEnabled, patrolRunning, runPatrol, saveGeneralKeywords, type PatrolScope } from "@/lib/patrol";
+import { isPostType } from "@/lib/patrolLogic";
 
 // 社群助手（發文排程）的動作：主人，或這個專案「可編輯」的合夥人才能用（requireProjectEdit）
 
@@ -101,7 +104,7 @@ export async function deletePostAction(id: string): Promise<PostResult> {
 }
 
 /** AI 依專案描述與主題寫草稿（不存檔，回傳給表單讓你改） */
-export async function draftPostAction(projectId: string, v: { platform: string; format?: string; kind?: string | null; target: string; topic: string }): Promise<PostResult> {
+export async function draftPostAction(projectId: string, v: { platform: string; format?: string; kind?: string | null; target: string; topic: string; template?: { type: string; skeleton: string } | null }): Promise<PostResult> {
   await requireProjectEdit(projectId);
   const L = await getL();
   const project = isUuid(projectId) ? await getProject(projectId) : null;
@@ -111,7 +114,9 @@ export async function draftPostAction(projectId: string, v: { platform: string; 
   if (!draftEnabled()) return { ok: false, error: L("還沒設定 ANTHROPIC_API_KEY，AI 寫草稿不能用。", "ANTHROPIC_API_KEY isn't set, so AI drafts are unavailable.") };
   try {
     const format: PostFormat = isFormat(v.format) ? v.format : "post";
-    const draft = await draftPost(project, { platform: v.platform, format, kind: isKind(v.kind) ? v.kind : null, target: String(v.target ?? "").slice(0, 300), topic });
+    // 海巡的模板：只收清單裡的類型，骨架限制長度
+    const template = v.template && isPostType(v.template.type) && typeof v.template.skeleton === "string" && v.template.skeleton.trim() ? { type: v.template.type, skeleton: v.template.skeleton.slice(0, 600) } : null;
+    const draft = await draftPost(project, { platform: v.platform, format, kind: isKind(v.kind) ? v.kind : null, target: String(v.target ?? "").slice(0, 300), topic, template });
     return draft ? { ok: true, draft } : { ok: false, error: L("AI 沒有寫出內容，再按一次試試。", "No draft came back. Try again.") };
   } catch {
     return { ok: false, error: L("AI 暫時寫不出來，等一下再試。", "The AI couldn't write this right now. Try again shortly.") };
@@ -255,6 +260,40 @@ export async function deleteSwipeAction(id: string): Promise<PostResult> {
   if (!swipe) return { ok: false };
   await requireProjectEdit(swipe.project_id);
   await deleteSwipe(id);
+  revalidatePath("/social");
+  return { ok: true };
+}
+
+// ---------- Threads 海巡 ----------
+
+/** 現在抓一次：專案的要主人或可編輯的合夥人；不限領域的熱門（projectId 空的）只有主人。背景跑 1～3 分鐘 */
+export async function runPatrolAction(projectId: string | null): Promise<PostResult> {
+  if (projectId) await requireProjectEdit(projectId);
+  else await requireOwner();
+  const L = await getL();
+  if (!patrolEnabled()) return { ok: false, error: L("還沒設定 APIFY_TOKEN，海巡不能用。", "APIFY_TOKEN isn't set, so the patrol is unavailable.") };
+  let scope: PatrolScope;
+  if (projectId) {
+    const p = isUuid(projectId) ? await getProject(projectId) : null;
+    if (!p) return { ok: false };
+    if (!p.radar_keywords?.length) return { ok: false, error: L("這個專案還沒設關鍵字：到專案頁的「話題雷達」填幾個。", "This project has no keywords yet. Add some under Topic radar on its page.") };
+    scope = { projectId: p.id, name: p.name, description: p.description ?? "", keywords: p.radar_keywords };
+  } else {
+    scope = await generalScope();
+    if (!scope.keywords.length) return { ok: false, error: L("先填幾個要抓的詞。", "Add a few keywords first.") };
+  }
+  if (await patrolRunning(scope.projectId)) return { ok: false, error: L("正在抓了，等一下再看。", "Already running. Check back shortly.") };
+  const id = await openPatrol(scope);
+  if (!id) return { ok: false, error: L(`請先在 ideabox 的 Supabase 執行 ${PATROL_MIGRATION}`, `Run ${PATROL_MIGRATION} on the ideabox Supabase first`) };
+  after(() => runPatrol(scope, id).catch(() => false));
+  revalidatePath("/social");
+  return { ok: true };
+}
+
+/** 改「不限領域的熱門」要抓的詞（最多 5 個） */
+export async function savePatrolKeywordsAction(text: string): Promise<PostResult> {
+  await requireOwner();
+  await saveGeneralKeywords(String(text ?? "").slice(0, 300));
   revalidatePath("/social");
   return { ok: true };
 }

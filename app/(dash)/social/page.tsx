@@ -9,12 +9,13 @@ import { imagesOf } from "@/lib/postLogic";
 import { FORMAT_MIGRATION, POSTS_MIGRATION, draftEnabled, listPosts } from "@/lib/posts";
 import { listProjects } from "@/lib/projects";
 import { listSwipes } from "@/lib/swipes";
+import { generalKeywords, loadPatrol, patrolEnabled } from "@/lib/patrol";
 import { db } from "@/lib/db";
 import type { ProfileResult } from "@/lib/engageLogic";
 import { SocialView, type SocialProject } from "./SocialView";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // AI 寫腳本
+export const maxDuration = 300; // AI 寫腳本；海巡「現在抓一次」在背景跑（抓貼文最多等 150 秒，再加 AI 整理與存圖片）
 
 // 社群助手：所有專案的社群貼文。首頁是一週看板（可以請 AI 排這週），另外有完整的排程清單與爆款靈感庫。
 // 看＝看得到專案頁的人（只列他看得到的專案）；新增、修改要主人或這個專案「可編輯」的合夥人。
@@ -29,6 +30,8 @@ export default async function SocialPage() {
   const ids = new Set(projects.map((p) => p.id));
   const posts = postList.posts.filter((p) => ids.has(p.project_id));
   const swipeList = await listSwipes([...ids]);
+  // Threads 海巡：每個專案與「不限領域」最新的報告（migration-037）
+  const [patrolData, patrolKeywords] = await Promise.all([loadPatrol([...ids]), generalKeywords().catch(() => [] as string[])]);
   // migration-031：貼文的內容類型、靈感庫
   const hasKind = swipeList.ready;
   // 個人檔案健檢：每個專案上一次的結果（存在 settings）
@@ -59,7 +62,7 @@ export default async function SocialPage() {
         <p className="notice glass">{L(`Reel／輪播／限動腳本需要先執行 ${FORMAT_MIGRATION}；一般貼文的排程照常能用。`, `Run ${FORMAT_MIGRATION} to use Reel, carousel and story scripts. Regular posts work as before.`)}</p>
       )}
       <Suspense>
-        <SocialView projects={projects} posts={posts} images={images} aiEnabled={draftEnabled()} hasFormat={hasFormat} hasKind={hasKind} hasMetrics={hasMetrics} swipes={swipeList.swipes} swipesReady={swipeList.ready} profiles={profiles} today={taipeiDate()} now={Date.now()} />
+        <SocialView projects={projects} posts={posts} images={images} aiEnabled={draftEnabled()} hasFormat={hasFormat} hasKind={hasKind} hasMetrics={hasMetrics} swipes={swipeList.swipes} swipesReady={swipeList.ready} profiles={profiles} patrol={{ ready: patrolData.ready, enabled: patrolEnabled(), scopes: patrolData.scopes, images: patrolData.images, keywords: patrolKeywords }} owner={access.owner} today={taipeiDate()} now={Date.now()} />
       </Suspense>
     </>
   );

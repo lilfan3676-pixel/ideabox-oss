@@ -6,6 +6,8 @@ import { rememberProjectOrder } from "@/components/ui";
 import { api, ApiError } from "./api";
 import { L } from "./i18n";
 import { getSession, saveSession } from "./session";
+import type { HomeData } from "./types";
+import { pushWidgets } from "./widgets";
 
 type State<T> = { data: T | null; error: string | null; loading: boolean; refreshing: boolean };
 
@@ -34,6 +36,8 @@ export function useApi<T>(path: string, opts?: { pollMs?: number }) {
       const s = getSession();
       if (s && Array.isArray(tabs) && tabs.join() !== (s.tabs ?? []).join()) saveSession({ ...s, tabs: tabs.map(String) }).catch(() => null);
       cache.set(p, data);
+      // 首頁資料順便推給桌面小工具
+      if (p === "/api/app/home") pushWidgets(data as unknown as HomeData);
       if (pathRef.current === p) setState({ data, error: null, loading: false, refreshing: false });
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : L("讀取失敗", "Could not load");

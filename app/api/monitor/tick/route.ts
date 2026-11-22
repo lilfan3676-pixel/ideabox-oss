@@ -8,6 +8,7 @@ import { track } from "@/lib/sysLog";
 import { runEventReminders } from "@/lib/app";
 import { runPostReminders } from "@/lib/posts";
 import { runCheckin } from "@/lib/checkin";
+import { runSprint } from "@/lib/sprint";
 
 // ideabox 自己的 Supabase 每 5 分鐘呼叫一次（pg_cron），密鑰存在 settings 表
 export const maxDuration = 120;
@@ -33,9 +34,11 @@ export async function POST(req: NextRequest) {
     const reminders = await runEventReminders().catch((e) => { console.error("event reminders", e); return 0; });
     // 發文排程：時間到的貼文，把文案傳到 Telegram（還沒執行 migration-028 就什麼都不做）
     const posts = await runPostReminders().catch((e) => { console.error("post reminders", e); return 0; });
-    // 每晚進度確認：台北 21:30 之後問一次到期的里程碑與下一步做了沒（一天一次，沒有要問的就不傳）
+    // 每晚進度確認：台北 21:30 之後問一次到期還沒打勾的待辦做了沒（一天一次，沒有要問的就不傳）
     const checkin = await runCheckin().catch((e) => { console.error("checkin", e); return 0; });
-    return NextResponse.json({ ok: true, ...r, slack, reminders, posts, checkin });
+    // 衝刺提醒：有期限在衝刺的專案，早上 8 點後、晚上 9 點半後各傳一則「倒數＋今天該做什麼」（沒有在衝刺就什麼都不做）
+    const sprint = await runSprint().catch((e) => { console.error("sprint", e); return 0; });
+    return NextResponse.json({ ok: true, ...r, slack, reminders, posts, checkin, sprint });
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err).slice(0, 200) }, { status: 500 });
   }

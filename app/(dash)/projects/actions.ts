@@ -14,7 +14,8 @@ const isUuid = (s: unknown): s is string => typeof s === "string" && /^[0-9a-f-]
 const STATUSES: ProjectStatus[] = ["active", "paused", "done"];
 export type ProjectResult = { ok: boolean; error?: string };
 const done = (): ProjectResult => {
-  revalidatePath("/projects");
+  // 連同單一專案的詳細頁一起更新（詳細頁也能勾待辦、加待辦）
+  revalidatePath("/projects", "layout");
   return { ok: true };
 };
 
@@ -127,8 +128,15 @@ export async function addMilestoneAction(id: string, title: string, due: string)
   const L = await getL();
   const t = String(title ?? "").trim();
   if (!a) return { ok: false };
-  if (!t || !isIsoDate(due)) return { ok: false, error: L("請填日期和名稱", "Enter a date and a title") };
-  await addMilestone(id, t, due, "manual", who(a));
+  // 日期可以不填（沒日期的待辦要先執行 migration-036）
+  const d = String(due ?? "").trim();
+  if (!t) return { ok: false, error: L("請填要做的事", "Enter what needs doing") };
+  if (d && !isIsoDate(d)) return { ok: false, error: L("日期格式不對", "That date doesn't look right") };
+  try {
+    await addMilestone(id, t, d || null, "manual", who(a));
+  } catch {
+    return { ok: false, error: d ? L("存不進去，請稍後再試", "Couldn't save, try again") : L("沒有日期的待辦要先在 Supabase 執行 migration-036-todos.sql（或先填一個日期）", "To-dos without a date need migration-036-todos.sql (or add a date for now)") };
+  }
   return done();
 }
 
@@ -139,7 +147,7 @@ export async function toggleMilestone(id: string): Promise<ProjectResult> {
   const a = m ? await editor(m.project_id) : null;
   if (!m || !a) return { ok: false };
   await db().from("project_milestones").update({ done: !m.done }).eq("id", id);
-  if (!m.done) await logActivity(m.project_id, byWho(a, `完成里程碑：${m.title}`), "manual");
+  if (!m.done) await logActivity(m.project_id, byWho(a, `完成待辦：${m.title}`), "manual");
   return done();
 }
 

@@ -3,7 +3,7 @@ import type { Idea } from "@/lib/db";
 import type { Milestone } from "@/lib/projectLogic";
 import type { Grant } from "@/lib/db";
 import type { Expense } from "@/lib/costCalc";
-import { countInRange, grantInsights, ideaInsights, monthCharges, projectDetailInsights, projectInsights, weeklyCounts } from "@/lib/insights";
+import { countInRange, focusTodos, groupTodos, grantInsights, ideaInsights, monthCharges, projectDetailInsights, projectInsights, weeklyCounts } from "@/lib/insights";
 
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-11-17T04:00:00Z");
@@ -67,6 +67,29 @@ describe("重點數字", () => {
     expect([ins.logsWeek, ins.logsLastWeek]).toEqual([2, 1]);
     expect(ins.upcoming.map((m) => [m.id, m.days])).toEqual([["near", 3], ["far", 14]]);
     expect(ins.overdue).toBe(1);
+  });
+
+  it("沒日期的待辦：算進還沒做的總數，但不算過期、不算接下來，詳細頁排在有日期的後面", () => {
+    const ms = (p: Partial<Milestone>) => ({ id: "m", project_id: "p1", title: "t", due: "2026-11-20", done: false, reminded_7: false, reminded_1: false, ...p }) as Milestone;
+    const list = [ms({ id: "a", due: null }), ms({ id: "b", due: "2026-11-25" }), ms({ id: "c", due: "2026-11-01" }), ms({ id: "d", due: null, done: true })];
+    const pin = projectInsights([{ id: "p1", status: "active" }], list, [], "2026-11-20", Date.parse("2026-11-20T04:00:00Z"));
+    expect(pin).toMatchObject({ open: 3, overdue: 1 });
+    expect(pin.upcoming.map((m) => m.id)).toEqual(["b"]);
+    const d = projectDetailInsights(list, [], "2026-11-20", Date.parse("2026-11-20T04:00:00Z"));
+    expect(d.upcoming.map((m) => `${m.id}:${m.days}`)).toEqual(["c:-19", "b:5", "a:null"]);
+    expect(d).toMatchObject({ overdue: 1, msDone: 1, msTotal: 4, next: { title: "t", due: "2026-11-25", days: 5 } });
+  });
+
+  it("待辦分組與「現在要注意的」：過期和快到期的排最前面，暫停的專案不算", () => {
+    const ms = (p: Partial<Milestone>) => ({ id: "m", project_id: "p1", title: "t", due: "2026-11-20", done: false, reminded_7: false, reminded_1: false, ...p }) as Milestone;
+    const list = [ms({ id: "far", due: "2026-12-20" }), ms({ id: "none", due: null }), ms({ id: "week", due: "2026-11-27" }), ms({ id: "late", due: "2026-11-18" }), ms({ id: "soon", due: "2026-11-23" }), ms({ id: "ok", done: true }), ms({ id: "paused", project_id: "p2", due: "2026-11-01" })];
+    const g = groupTodos(list.filter((m) => m.project_id === "p1"), "2026-11-20");
+    expect(g.urgent.map((m) => m.id)).toEqual(["late", "soon", "week"]);
+    expect(g.later.map((m) => m.id)).toEqual(["far"]);
+    expect(g.someday.map((m) => m.id)).toEqual(["none"]);
+    expect(g.done.map((m) => m.id)).toEqual(["ok"]);
+    const f = focusTodos([{ id: "p1", status: "active" }, { id: "p2", status: "paused" }], list, "2026-11-20");
+    expect(f.map((m) => `${m.id}:${m.days}`)).toEqual(["late:-2", "soon:3"]);
   });
 
   it("專案詳細頁：下一個里程碑跳過已完成和過期的，過期的另外算", () => {

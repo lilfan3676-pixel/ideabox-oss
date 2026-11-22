@@ -269,17 +269,18 @@ export async function handleCallback(cb: TgCallback) {
 
   // Slack 自動更新改回來
   if (data.startsWith("pu:")) {
-    const p = await takeToken<{ undo: string; stage: number; next: string | null; ms: string[]; ev?: string[] }>(data.slice(3));
+    const p = await takeToken<{ undo: string; stage: number; next: string | null; ms: string[]; dn?: string[]; ev?: string[] }>(data.slice(3));
     if (!p) return void (await answerCallback(cb.id, "這個選項已經處理過了"));
     const { getProject, updateProject } = await import("./projects");
     const proj = await getProject(p.undo);
     if (!proj) return void (await answerCallback(cb.id, "這個專案已經不在了"));
     await updateProject(proj, { stage: p.stage, next_step: p.next }, "manual");
     if (p.ms?.length) await db().from("project_milestones").delete().in("id", p.ms);
+    if (p.dn?.length) await db().from("project_milestones").update({ done: false }).in("id", p.dn);
     if (p.ev?.length) await db().from("project_events").delete().in("id", p.ev);
     await answerCallback(cb.id, "已改回來");
     await setButtons(chatId, msgId, null);
-    await sendMessage(chatId, `↩️ ${esc(proj.name)} 已改回原本的階段和下一步${p.ms?.length || p.ev?.length ? "，新增的里程碑、排程也刪掉了" : ""}`, { replyTo: msgId });
+    await sendMessage(chatId, `↩️ ${esc(proj.name)} 已改回原本的階段和下一步${p.ms?.length || p.ev?.length ? "，新增的待辦、排程也刪掉了" : ""}${p.dn?.length ? "，自動打勾的待辦也取消了" : ""}`, { replyTo: msgId });
     return;
   }
 
@@ -293,13 +294,24 @@ export async function handleCallback(cb: TgCallback) {
     return;
   }
 
-  // 每晚進度確認：里程碑做了／延期、下一步做完了
+  // 每晚進度確認：過期的待辦做了／延期（下一步的按鈕是舊訊息留下來的，照樣認得）
   if (data.startsWith("ck:")) {
     const { handleCheckinButton } = await import("./checkin");
     const r = await handleCheckinButton(data);
     await answerCallback(cb.id, r.toast || undefined);
     if (r.done) await setButtons(chatId, msgId, null);
     if (r.text) await sendMessage(chatId, r.text, { replyTo: msgId });
+    return;
+  }
+
+  // 衝刺提醒的按鈕（這件做了／已經完成停止提醒）
+  if (data.startsWith("sp:")) {
+    const { handleSprintButton } = await import("./sprint");
+    const r = await handleSprintButton(data);
+    await answerCallback(cb.id, r.toast || undefined);
+    if (r.html) await editMessage(chatId, msgId, r.html, r.buttons ?? null);
+    else if (r.buttons === null) await setButtons(chatId, msgId, null);
+    if (r.reply) await sendMessage(chatId, r.reply, { replyTo: msgId });
     return;
   }
 

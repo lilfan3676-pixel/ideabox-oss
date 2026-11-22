@@ -179,7 +179,9 @@ describe("發文排程：流程", () => {
 
   it("Telegram 新增：寫草稿、排定、回覆草稿與修改連結", async () => {
     const { handleProjectText } = await import("@/lib/projects");
-    const reply = await handleProjectText("fit 發文 11/21 20:00 中山社團 常見問題整理");
+    // 指令裡的「11/21」是照今天往後推的，所以把今天固定在 11/20（不然過了那天會被算成明年）
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-20T04:00:00Z") });
+    const reply = await handleProjectText("fit 發文 11/21 20:00 中山社團 常見問題整理").finally(() => vi.useRealTimers());
     expect(reply).toContain("已排定發文：11/21 20:00・FB 社團・中山社團");
     expect(reply).toContain("這是 AI 寫的草稿");
     expect(reply).toContain("https://box.example/social?p=fit&view=posts");

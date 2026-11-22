@@ -2,11 +2,11 @@
   "expo": {
     "name": "ideabox",
     "slug": "ideabox",
-    "version": "2.1.3",
+    "version": "2.4.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "ideabox",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.example.ideabox",
       "supportsTablet": false,
@@ -50,13 +50,50 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/logo-ball.png",
+          "image": "./assets/logo-ball-inv.png",
           "imageWidth": 140,
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "image": "./assets/logo-ball-inv.png",
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#090a0e"
+        }
+      ],
+      [
+        "expo-widgets",
+        {
+          "widgets": [
+            {
+              "name": "IdeaboxNext",
+              "displayName": "下一件",
+              "description": "接下來最近的一件事",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium"
+                ]
+              }
+            },
+            {
+              "name": "IdeaboxToday",
+              "displayName": "今天",
+              "description": "今天做完幾件、今天的時間軸",
+              "ios": {
+                "supportedFamilies": [
+                  "systemSmall",
+                  "systemMedium",
+                  "systemLarge"
+                ]
+              }
+            },
+            {
+              "name": "IdeaboxProjects",
+              "displayName": "各專案的下一步",
+              "description": "每個進行中專案的下一步",
+              "ios": {
+                "supportedFamilies": [
+                  "systemMedium",
+                  "systemLarge"
+                ]
+              }
+            }
+          ]
         }
       ]
     ],
@@ -67,6 +104,6 @@
       "router": {},
       "eas": {}
     },
-    "backgroundColor": "#ffffff"
+    "backgroundColor": "#090a0e"
   }
 }

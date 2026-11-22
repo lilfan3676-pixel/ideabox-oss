@@ -193,12 +193,12 @@ function MemberEditor({
         <button type="button" className={!v.canEdit ? "active" : ""} aria-pressed={!v.canEdit} onClick={() => setV({ ...v, canEdit: false })}>{L("只看", "View only")}</button>
         <button type="button" className={v.canEdit ? "active" : ""} aria-pressed={v.canEdit} onClick={() => setV({ ...v, canEdit: true })}>{L("可編輯", "Can edit")}</button>
       </div>
-      <p className="muted small">{L("可編輯＝在他的專案裡勾里程碑、新增／改排程、寫日誌（日誌會記上他的名字）。階段、下一步、專案設定只有你能改。", "Can edit = tick milestones, add/edit schedule items and write logs in their projects (logs show their name). Stages, next step and settings stay yours.")}</p>
+      <p className="muted small">{L("可編輯＝在他的專案裡勾待辦、新增／改排程、寫日誌（日誌會記上他的名字）。階段、下一步、專案設定只有你能改。", "Can edit = tick to-dos, add/edit schedule items and write logs in their projects (logs show their name). Stages, next step and settings stay yours.")}</p>
 
       <h4>{L("推送", "Push")}</h4>
       <label className="pt-check">
         <input type="checkbox" checked={v.push} onChange={(e) => setV({ ...v, push: e.target.checked })} />
-        {L("他的專案：今日排程、里程碑前 7／1 天、排程前 30 分、產品掛掉／恢復（要開產品監控）", "Their projects: today's schedule, milestones 7/1 days before, 30 min before items, product down/up (needs monitor)")}
+        {L("他的專案：今日排程、待辦到期前 7／1 天、排程前 30 分、產品掛掉／恢復（要開產品監控）", "Their projects: today's schedule, to-dos 7/1 days before they're due, 30 min before items, product down/up (needs monitor)")}
       </label>
 
       {member && (

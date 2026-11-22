@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useL } from "@/app/LangProvider";
-import type { Milestone, Project, ProjectEvent } from "@/lib/projectLogic";
+import { withDate, type Milestone, type Project, type ProjectEvent } from "@/lib/projectLogic";
 import { PLATFORM_LABEL, STATUS_LABEL, postTitle, taipeiParts, type Post } from "@/lib/postLogic";
 import { ContextMenu } from "../ideaUi";
 import { useAccess } from "../AccessContext";
@@ -11,7 +11,7 @@ import { editsProject } from "@/lib/accessLogic";
 import { addEventAction, deleteEventAction, updateEventAction, type ProjectResult } from "./actions";
 import { countInRange } from "@/lib/insights";
 
-// 全部專案的月曆：排程（可跨好幾天，畫成橫條）＋里程碑（◆），用專案顏色區分。
+// 全部專案的月曆：排程（可跨好幾天，畫成橫條）＋有日期的待辦（◆），用專案顏色區分。
 // 點空白的日子新增排程，點排程可以改或刪。
 
 type Item = { key: string; kind: "event" | "milestone"; id: string; projectId: string; title: string; start: string; end: string; time?: string | null; done?: boolean };
@@ -65,7 +65,7 @@ export function Calendar({
   const items: Item[] = useMemo(
     () => [
       ...events.filter((e) => shown.has(e.project_id)).map((e) => ({ key: `e${e.id}`, kind: "event" as const, id: e.id, projectId: e.project_id, title: e.title, start: e.start_date, end: e.end_date, time: e.start_time ? e.start_time.slice(0, 5) : null })),
-      ...milestones.filter((m) => shown.has(m.project_id)).map((m) => ({ key: `m${m.id}`, kind: "milestone" as const, id: m.id, projectId: m.project_id, title: m.title, start: m.due, end: m.due, done: m.done })),
+      ...withDate(milestones).filter((m) => shown.has(m.project_id)).map((m) => ({ key: `m${m.id}`, kind: "milestone" as const, id: m.id, projectId: m.project_id, title: m.title, start: m.due, end: m.due, done: m.done })),
     ],
     [events, milestones, shown],
   );
@@ -147,7 +147,7 @@ export function Calendar({
         </div>
         <dl className="calendar-hero-stats">
           <div><dt>{L("排程", "Events")}</dt><dd className="accent">{inMonth.events}</dd></div>
-          <div><dt>{L("里程碑", "Milestones")}</dt><dd>{inMonth.milestones}</dd></div>
+          <div><dt>{L("待辦", "To-dos")}</dt><dd>{inMonth.milestones}</dd></div>
           {postsInMonth > 0 ? <div><dt>{L("發文", "Posts")}</dt><dd>{postsInMonth}</dd></div> : <div><dt>{L("有設定時間", "With a time")}</dt><dd>{timed}</dd></div>}
           <div><dt>{L("最忙的一週", "Busiest week")}</dt><dd>{busiest ? md(busiest.ws) : "—"}</dd></div>
         </dl>
@@ -159,9 +159,9 @@ export function Calendar({
           <button type="button" className="btn ghost small" onClick={() => go(today.slice(0, 7))}>{L("今天", "Today")}</button>
           <button type="button" className="btn ghost small" onClick={() => move(1)} aria-label={L("下個月", "Next month")}>›</button>
         </div>
-        <span className="muted small push">{L("點空白的日子新增排程；◆ 是里程碑、📣 是當天要發的貼文", "Click an empty day to add; ◆ = milestone, 📣 = posts due")}</span>
+        <span className="muted small push">{L("點空白的日子新增排程；◆ 是有日期的待辦、📣 是當天要發的貼文", "Click an empty day to add; ◆ = to-do with a date, 📣 = posts due")}</span>
       </div>
-      {!ready && <p className="error small">{L("排程需要先在 ideabox 的 Supabase 執行 migration-015-events.sql（里程碑照常顯示）。", "Scheduling needs migration-015-events.sql (milestones still show).")}</p>}
+      {!ready && <p className="error small">{L("排程需要先在 ideabox 的 Supabase 執行 migration-015-events.sql（待辦照常顯示）。", "Scheduling needs migration-015-events.sql (to-dos still show).")}</p>}
 
       <div className="calendar-row" aria-hidden>
         <div className="calendar-weekdays">
@@ -228,7 +228,7 @@ export function Calendar({
             </div>
             <div className={`calendar-sum d-only ${sum.events + sum.milestones ? "" : "none"}`}>
               <b>{sum.events + sum.milestones}</b>
-              <span>{sum.events + sum.milestones ? L(`${sum.events} 個排程${sum.milestones ? `・${sum.milestones} 個里程碑` : ""}`, `${sum.events} events${sum.milestones ? ` · ${sum.milestones} milestones` : ""}`) : L("沒有排程", "Nothing")}</span>
+              <span>{sum.events + sum.milestones ? L(`${sum.events} 個排程${sum.milestones ? `・${sum.milestones} 件待辦` : ""}`, `${sum.events} events${sum.milestones ? ` · ${sum.milestones} to-dos` : ""}`) : L("沒有排程", "Nothing")}</span>
             </div>
             </div>
           );
@@ -291,12 +291,12 @@ export function Calendar({
             </>
           ) : (
             <>
-              <p className="ctx-title">{menu.item.kind === "milestone" ? `◆ ${L("里程碑", "Milestone")}` : L("排程", "Event")}・{nameOf(menu.item.projectId)}</p>
+              <p className="ctx-title">{menu.item.kind === "milestone" ? `◆ ${L("待辦", "To-do")}` : L("排程", "Event")}・{nameOf(menu.item.projectId)}</p>
               <p className="calendar-ms-title">
                 {menu.item.time ? `${menu.item.time} ` : ""}
                 {menu.item.title}（{menu.item.start === menu.item.end ? md(menu.item.start) : `${md(menu.item.start)}～${md(menu.item.end)}`}）{menu.item.done ? L("・已完成", " · done") : ""}
               </p>
-              {menu.item.kind === "milestone" && editsProject(access, menu.item.projectId) && <p className="ctx-sub">{L("里程碑在專案卡片上修改", "Edit milestones on the project card")}</p>}
+              {menu.item.kind === "milestone" && editsProject(access, menu.item.projectId) && <p className="ctx-sub">{L("待辦在專案卡片上修改", "Edit to-dos on the project card")}</p>}
               {projects.find((p) => p.id === menu.item!.projectId) && (
                 <Link className="calendar-link" href={`/projects/${projects.find((p) => p.id === menu.item!.projectId)!.slug}`}>{L("看這個專案 ›", "Open project ›")}</Link>
               )}

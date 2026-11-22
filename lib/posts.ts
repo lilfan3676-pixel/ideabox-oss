@@ -1,4 +1,5 @@
 import "server-only";
+import { templateForPrompt } from "./patrolLogic";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { callClaude, noThinking, textOf } from "./ai";
 import { db } from "./db";
@@ -157,7 +158,7 @@ export function draftEnabled(): boolean {
 }
 
 /** 依專案的一句話描述與主題寫一篇草稿；拿這個專案之前的貼文當語氣參考 */
-export async function draftPost(project: Pick<Project, "id" | "name" | "description" | "links">, v: { platform: Platform; format?: PostFormat; kind?: PostKind | null; target: string; topic: string }): Promise<string> {
+export async function draftPost(project: Pick<Project, "id" | "name" | "description" | "links">, v: { platform: Platform; format?: PostFormat; kind?: PostKind | null; target: string; topic: string; template?: { type: string; skeleton: string } | null }): Promise<string> {
   const { data } = await db().from("project_posts").select("*").eq("project_id", project.id).order("due_at", { ascending: false }).limit(30);
   const format: PostFormat = isFormat(v.format) && formatsFor(v.platform).includes(v.format) ? v.format : "post";
   // 語氣參考只拿一般貼文（腳本的格式不一樣，拿來參考會把格式帶歪）
@@ -179,6 +180,7 @@ export async function draftPost(project: Pick<Project, "id" | "name" | "descript
     v.target ? `發在：${v.target}` : "",
     `這篇的主題：${v.topic}`,
     isKind(v.kind) ? `這篇的類型：${KIND_STYLE[v.kind]}` : "",
+    v.template ? templateForPrompt(v.template) : "",
     hooks ? `同領域最近有效的開頭（只學句子的形狀，不要抄內容、不要提到這些帳號）：\n${hooks}` : "",
     samples.length ? `我之前自己寫的貼文（只參考語氣和長度，不要照抄內容）：\n${samples.map((s, i) => `--- 第 ${i + 1} 篇 ---\n${s.body.slice(0, 900)}`).join("\n")}` : "",
   ].filter(Boolean).join("\n\n");

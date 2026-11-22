@@ -2,7 +2,7 @@
 
 [繁體中文](README.md)
 
-A personal dashboard for a solo founder. Send interesting posts to a Telegram bot and AI summarizes, categorizes, scores and files them. Your projects' stages, milestones and schedule live in the same place, along with costs, grants, uptime of your products, and what the Claude Code sessions on your computer are doing.
+A personal dashboard for a solo founder. Send interesting posts to a Telegram bot and AI summarizes, categorizes, scores and files them. Your projects' stages, to-dos and schedule live in the same place, along with costs, grants, uptime of your products, and what the Claude Code sessions on your computer are doing.
 
 Stack: Next.js 16 (App Router) + React 19 + Supabase + Vercel + Claude API + Telegram Bot, plus a read-only Expo mobile app.
 
@@ -26,7 +26,7 @@ Stack: Next.js 16 (App Router) + React 19 + Supabase + Vercel + Claude API + Tel
 | Page | What it does |
 |---|---|
 | Ideas `/` | Send links, screenshots or text via Telegram → AI summary, category and scores (value to your projects / feasibility / market), auto-filed into folders, likely duplicates flagged. Drag-and-drop folders; design ideas get design cards and a "design brief" |
-| Projects `/projects` | Custom stages per project, next step, milestones, work log; calendar (events) and timeline; active / paused / done |
+| Projects `/projects` | Custom stages per project, next step, to-dos, work log; calendar (events) and timeline; active / paused / done |
 | Project detail | Stage history, related ideas, product metrics, and **topic radar** (every Sunday, Apify searches Threads for your keywords; AI summarizes themes and pain points) |
 | Social `/social` | Social posts per project: a week board and schedule (when it's time you get the copy on Telegram to post yourself; nothing is auto-posted); AI drafts for posts, Reel / carousel / story scripts, with live copy checks; "Plan with AI" builds a week from your work log, topic radar and ideas; a swipe file that ranks viral hooks by multiple of the account's usual views; results that show which posts actually work; drafts for comment replies, DMs and comments; a 100-point profile check |
 | Office `/office` | Each running Claude Code session on your computer becomes a pixel character showing its role, status and current task (via Claude Code hooks) |
@@ -36,7 +36,7 @@ Stack: Next.js 16 (App Router) + React 19 + Supabase + Vercel + Claude API + Tel
 | Settings `/settings` | About you, project descriptions (used by AI), appearance, weekly digest, learned preferences, mobile pairing |
 
 Also:
-- **Telegram bot**: save ideas, reply to add notes, change folder or project; `專案` for an overview, `myapp 下一步 …` / `myapp 里程碑 12/1 …` / `myapp 排程 11/20-11/25 …` to update projects; `myapp 發文 11/21 20:00 IG Reel topic` to schedule a post with an AI draft
+- **Telegram bot**: save ideas, reply to add notes, change folder or project; `專案` for an overview, `myapp 下一步 …` / `myapp 待辦 12/1 …` / `myapp 排程 11/20-11/25 …` to update projects; `myapp 發文 11/21 20:00 IG Reel topic` to schedule a post with an AI draft
 - **Slack progress sync** (optional): one channel per project; messages in the `【完成】【下一步】【階段】` format update the project
 - Four themes (Mono by default, plus Fluento / Ember / Portal) × light / dark
 - **Self-learning**: learns your preferences from what you adopt, delete and annotate

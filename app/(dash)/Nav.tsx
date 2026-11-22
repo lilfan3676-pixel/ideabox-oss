@@ -27,6 +27,7 @@ import {
   IconPulse,
   IconMegaphone,
   IconFlame,
+  IconSearch,
   IconChat,
   IconTrend,
   IconList,
@@ -64,7 +65,7 @@ const PAGES = (() => {
 const NAV_EN: Record<string, string> = {
   點子庫: "Ideas", 點子: "Ideas", 專案: "Projects", 辦公室: "Office", 整棟大樓: "Whole building", 全部專案: "All projects", 專案卡片: "Project cards", 月曆: "Calendar", 進行中: "Active", "暫停／完成": "Paused / done", 設計庫: "Design", 設計: "Design", 封測: "Beta", 補助雷達: "Grants", 補助: "Grants",
   監控: "Monitor", 成本: "Costs", 設定: "Settings",
-  社群助手: "Social", 社群: "Social", 一週看板: "Week board", 排程清單: "All posts", 靈感庫: "Swipe file", 成效: "Results", 互動: "Engage", 檔案健檢: "Profile check",
+  社群助手: "Social", 社群: "Social", 一週看板: "Week board", 排程清單: "All posts", 靈感庫: "Swipe file", 海巡: "Patrol", 成效: "Results", 互動: "Engage", 檔案健檢: "Profile check",
   待審核: "To review", 已核准: "Approved", 已同步: "Synced", 已淘汰: "Rejected",
   全部點子: "All ideas", 本週: "This week", 待補充: "Needs input", 已採用: "Adopted",
   全部設計: "All designs", 介面設計: "UI design", "GitHub 資源": "GitHub", 已選入簡報: "In brief",
@@ -216,6 +217,7 @@ const CORE_RAIL: Record<string, { def: string; items: RailItem[] }> = {
       { key: "posts", label: "排程清單", icon: <IconList /> },
       { key: "audit", label: "成效", icon: <IconTrend /> },
       { key: "swipes", label: "靈感庫", icon: <IconFlame /> },
+      { key: "patrol", label: "海巡", icon: <IconSearch /> },
       { key: "engage", label: "互動", icon: <IconChat /> },
       { key: "profile", label: "檔案健檢", icon: <IconUsers /> },
     ],
@@ -446,12 +448,15 @@ export function ModeToggle() {
   );
 }
 
-/** 主題色切換膠囊（Fluento／Ember） */
+/** 主題色切換膠囊（Mono 排第一個；名稱都用英文，不跟語言換） */
 export function ThemeSwitch({ inline = false }: { inline?: boolean }) {
   const { theme, applyTheme } = useThemeState();
   const L = useL();
   return (
     <div className={`theme-switch ${inline ? "inline" : ""}`} role="radiogroup" aria-label={L("主題色", "Theme")}>
+      <button type="button" role="radio" aria-checked={theme === "mono"} className={theme === "mono" ? "active" : ""} onClick={() => applyTheme("mono")}>
+        <span className="dot mono" /> Mono
+      </button>
       <button type="button" role="radio" aria-checked={theme === "fluento"} className={theme === "fluento" ? "active" : ""} onClick={() => applyTheme("fluento")}>
         <span className="dot fluento" /> Fluento
       </button>
@@ -460,9 +465,6 @@ export function ThemeSwitch({ inline = false }: { inline?: boolean }) {
       </button>
       <button type="button" role="radio" aria-checked={theme === "portal"} className={theme === "portal" ? "active" : ""} onClick={() => applyTheme("portal")}>
         <span className="dot portal" /> Portal
-      </button>
-      <button type="button" role="radio" aria-checked={theme === "mono"} className={theme === "mono" ? "active" : ""} onClick={() => applyTheme("mono")}>
-        <span className="dot mono" /> {L("黑白", "Mono")}
       </button>
     </div>
   );

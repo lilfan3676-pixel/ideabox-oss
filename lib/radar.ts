@@ -30,10 +30,10 @@ async function apify(path: string, init: RequestInit = {}): Promise<unknown> {
   return res.json();
 }
 
-type Run = { id: string; status: string; defaultDatasetId: string };
+export type Run = { id: string; status: string; defaultDatasetId: string };
 
-async function startRun(keywords: string[]): Promise<Run> {
-  const input = { mode: "search", keywords, max_posts: POSTS_PER_KEYWORD, search_filter: "top", search_language: "chinese", start_date: "7 days" };
+export async function startRun(keywords: string[], maxPosts = POSTS_PER_KEYWORD): Promise<Run> {
+  const input = { mode: "search", keywords, max_posts: maxPosts, search_filter: "top", search_language: "chinese", start_date: "7 days" };
   const json = (await apify(`/acts/${ACTOR}/runs?maxTotalChargeUsd=${MAX_USD_PER_RUN}`, { method: "POST", body: JSON.stringify(input) })) as { data: Run };
   return json.data;
 }
@@ -41,7 +41,7 @@ async function startRun(keywords: string[]): Promise<Run> {
 const FINISHED = new Set(["SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"]);
 
 /** 等所有抓取跑完（或到時間），回傳每個的資料列；沒跑完的也把已經抓到的拿回來 */
-async function collect(runs: Run[], deadline: number): Promise<unknown[][]> {
+export async function collect(runs: Run[], deadline: number): Promise<unknown[][]> {
   const state = runs.map((r) => ({ ...r }));
   while (Date.now() < deadline && state.some((r) => !FINISHED.has(r.status))) {
     await new Promise((ok) => setTimeout(ok, 8000));
@@ -123,6 +123,8 @@ export async function runRadar(projects: Project[], opts: { notify: boolean; rep
 
   const { data: prevRows } = await db().from("radar_reports").select("project_id, summary").eq("status", "done").order("created_at", { ascending: false }).limit(50);
   let ok = 0;
+  // Threads 海巡用同一批貼文分析格式與模板（不另外花抓取費用）；失敗不影響雷達
+  const patrol = import("./patrol").then((m) => Promise.all(started.map((j, i) => m.analyzePatrol({ projectId: j.p.id, name: j.p.name, description: j.p.description ?? "", keywords: j.p.radar_keywords! }, results[i]).catch(() => null)))).catch(() => null);
   await Promise.all(
     started.map(async (j, i) => {
       const t0 = Date.now();
@@ -154,6 +156,7 @@ export async function runRadar(projects: Project[], opts: { notify: boolean; rep
       }
     }),
   );
+  await patrol;
   return ok;
 }
 

@@ -2,7 +2,7 @@
 import type { Grant, Idea } from "./db";
 import { chargesBetween, toTwd, type Expense } from "./costCalc";
 import type { Category } from "./labels";
-import type { Milestone, Project } from "./projectLogic";
+import { datedOpen, type Milestone, type Project } from "./projectLogic";
 
 const DAY_MS = 86_400_000;
 const WEEK_MS = 7 * DAY_MS;
@@ -71,8 +71,9 @@ export type ProjectInsights = {
   logsWeek: number;
   logsLastWeek: number;
   weekly: number[]; // 最近 8 週每週幾筆日誌
-  upcoming: (Milestone & { days: number })[]; // 還沒完成、今天以後的里程碑，近的在前
+  upcoming: (Milestone & { due: string; days: number })[]; // 還沒完成、有日期而且在今天以後的待辦，近的在前
   overdue: number; // 還沒完成但已經過期
+  open: number; // 還沒完成的待辦總數（沒日期的也算）
 };
 
 const dayDiff = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
@@ -82,14 +83,16 @@ export function projectInsights(projects: Pick<Project, "id" | "status">[], mile
   // 暫停、完成的專案不提醒，里程碑也不算
   const live = new Set(projects.filter((p) => p.status === "active").map((p) => p.id));
   const open = milestones.filter((m) => !m.done && live.has(m.project_id));
+  const dated = datedOpen(open);
   return {
     active: live.size,
     paused: projects.length - live.size,
     logsWeek: weekly[weekly.length - 1],
     logsLastWeek: weekly[weekly.length - 2],
     weekly,
-    upcoming: open.filter((m) => m.due >= today).sort((a, b) => a.due.localeCompare(b.due)).map((m) => ({ ...m, days: dayDiff(today, m.due) })),
-    overdue: open.filter((m) => m.due < today).length,
+    upcoming: dated.filter((m) => m.due >= today).map((m) => ({ ...m, days: dayDiff(today, m.due) })),
+    overdue: dated.filter((m) => m.due < today).length,
+    open: open.length,
   };
 }
 
@@ -101,20 +104,21 @@ export type ProjectDetailInsights = {
   overdue: number;
   msDone: number;
   msTotal: number;
-  upcoming: (Milestone & { days: number })[]; // 還沒完成的里程碑（過期的也算，days 是負的），近的在前
+  upcoming: (Milestone & { days: number | null })[]; // 還沒完成的待辦：有日期的在前（過期的也算，days 是負的），沒日期的排後面（days 是 null）
 };
 
 /** 單一專案詳細頁最上面那排數字 */
 export function projectDetailInsights(milestones: Milestone[], logs: { at: string }[], today: string, now: number): ProjectDetailInsights {
   const weekly = weeklyCounts(logs.map((l) => l.at), now);
-  const open = milestones.filter((m) => !m.done).sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : 0)).map((m) => ({ ...m, days: dayDiff(today, m.due) }));
-  const next = open.find((m) => m.days >= 0) ?? null;
+  const dated = datedOpen(milestones).map((m) => ({ ...m, days: dayDiff(today, m.due) }));
+  const open = [...dated, ...milestones.filter((m) => !m.done && !m.due).map((m) => ({ ...m, days: null }))];
+  const next = dated.find((m) => m.days >= 0) ?? null;
   return {
     logsWeek: weekly[weekly.length - 1],
     logsLastWeek: weekly[weekly.length - 2],
     weekly,
     next: next ? { title: next.title, due: next.due, days: next.days } : null,
-    overdue: open.filter((m) => m.days < 0).length,
+    overdue: dated.filter((m) => m.days < 0).length,
     msDone: milestones.length - open.length,
     msTotal: milestones.length,
     upcoming: open,
@@ -178,4 +182,33 @@ export function monthCharges(expenses: Expense[], month: string, usdTwd: number)
     }
   }
   return out.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)); // 不用 localeCompare：伺服器和瀏覽器排出來要一樣
+}
+
+// ---------- 待辦：分組與「現在要注意的」 ----------
+
+export type TodoGroups<T> = { urgent: T[]; later: T[]; someday: T[]; done: T[] };
+/** 幾天內到期算「快到期」 */
+export const URGENT_DAYS = 7;
+
+/** 一個專案的待辦分四堆：過期或 7 天內到期（近的在前）／有日期但還早／沒訂日期／已完成 */
+export function groupTodos<T extends Pick<Milestone, "due" | "done">>(ms: T[], today: string): TodoGroups<T> {
+  const dated = datedOpen(ms);
+  const edge = URGENT_DAYS;
+  return {
+    urgent: dated.filter((m) => dayDiff(today, m.due) <= edge),
+    later: dated.filter((m) => dayDiff(today, m.due) > edge),
+    someday: ms.filter((m) => !m.done && !m.due),
+    done: ms.filter((m) => m.done),
+  };
+}
+
+/** 總覽頁最上面「現在要注意的」預設看幾天內到期 */
+export const FOCUS_DAYS = 3;
+
+/** 全部進行中專案裡，過期或 3 天內到期、還沒做的待辦（最急的在前）。暫停、完成的專案不算 */
+export function focusTodos(projects: Pick<Project, "id" | "status">[], ms: Milestone[], today: string, within = FOCUS_DAYS): (Milestone & { due: string; days: number })[] {
+  const live = new Set(projects.filter((p) => p.status === "active").map((p) => p.id));
+  return datedOpen(ms.filter((m) => live.has(m.project_id)))
+    .map((m) => ({ ...m, days: dayDiff(today, m.due) }))
+    .filter((m) => m.days <= within);
 }

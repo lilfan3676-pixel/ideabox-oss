@@ -1,4 +1,4 @@
-// 每晚進度確認：21:30 用 Telegram 問到期的里程碑與下一步，按鈕直接更新
+// 每晚進度確認：21:30 用 Telegram 問「有日期、到期還沒打勾」的待辦，按鈕直接更新（下一步不問了）
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeDb, reset, tables } from "./support/fakeDb";
 import type { Milestone, Project } from "@/lib/projectLogic";
@@ -48,14 +48,14 @@ beforeEach(() => {
 });
 
 describe("每晚進度確認", () => {
-  it("要問哪些：只問進行中專案、到期或過期沒打勾的里程碑，和有寫的下一步", async () => {
+  it("要問哪些：只問進行中專案裡有日期、到期或過期沒打勾的待辦；沒日期的待辦和下一步都不問", async () => {
     const { planCheckin, taipeiMinutes, addDays } = await import("@/lib/checkin");
     const asks = planCheckin(
       [proj(), proj({ id: CAFE_ID, slug: "cafe", name: "Cafe", status: "paused", next_step: "找店面" }), proj({ id: "p3", slug: "x", name: "X", next_step: " " })],
-      [ms(), ms({ id: M2, title: "送審", due: "2026-11-17" }), ms({ id: "m3", title: "還沒到", due: "2026-11-21" }), ms({ id: "m4", done: true }), ms({ id: "m5", project_id: CAFE_ID })],
+      [ms(), ms({ id: M2, title: "送審", due: "2026-11-17" }), ms({ id: "m3", title: "還沒到", due: "2026-11-21" }), ms({ id: "m4", done: true }), ms({ id: "m5", project_id: CAFE_ID }), ms({ id: "m6", title: "沒期限", due: null })],
       "2026-11-20",
     );
-    expect(asks.map((a) => (a.kind === "milestone" ? `${a.milestone.title}:${a.late}` : `step:${a.step}`))).toEqual(["送審:3", "正式上架:0", "step:整理回報"]);
+    expect(asks.map((a) => (a.kind === "milestone" ? `${a.milestone.title}:${a.late}` : `step:${a.step}`))).toEqual(["送審:3", "正式上架:0"]);
     expect(taipeiMinutes(NIGHT)).toBe(21 * 60 + 35);
     expect(addDays("2026-11-28", 7)).toBe("2026-12-05");
   });
@@ -66,20 +66,21 @@ describe("每晚進度確認", () => {
     tables.project_milestones.push({ ...ms() }, { ...ms({ id: M2, title: "還沒到", due: "2026-11-25" }) });
     expect(await runCheckin(NIGHT - 10 * 60_000)).toBe(0); // 21:25
     expect(sent).toHaveLength(0);
-    expect(await runCheckin(NIGHT)).toBe(2);
+    expect(await runCheckin(NIGHT)).toBe(1);
     expect(sent[0].body.text).toContain("正式上架（今天到期）");
+    expect(sent[0].body.text).toContain("待辦");
     expect(sent[0].body.reply_markup.inline_keyboard.flat().map((b: { text: string }) => b.text)).toEqual(["✅ 做了", "⏰ 延 3 天", "⏰ 延 1 週", "先不動"]);
-    expect(sent[1].body.text).toContain("整理回報");
     expect(sent.flatMap((s) => s.body.reply_markup.inline_keyboard.flat()).every((b: { callback_data: string }) => Buffer.byteLength(b.callback_data) <= 64)).toBe(true);
     expect(await runCheckin(NIGHT + 5 * 60_000)).toBe(0);
-    expect(sent).toHaveLength(2);
-    // 隔天：里程碑過期 1 天，再問一次
-    expect(await runCheckin(NIGHT + 86_400_000)).toBe(2);
-    expect(sent[2].body.text).toContain("11/20 到期，過了 1 天");
+    expect(sent).toHaveLength(1);
+    // 隔天：過期 1 天，再問一次
+    expect(await runCheckin(NIGHT + 86_400_000)).toBe(1);
+    expect(sent[1].body.text).toContain("11/20 到期，過了 1 天");
 
     reset();
     sent = [];
-    tables.projects.push({ ...proj({ next_step: null }) });
+    // 只有下一步、沒有到期的待辦：不傳
+    tables.projects.push({ ...proj() });
     expect(await runCheckin(NIGHT)).toBe(0);
     expect(sent).toHaveLength(0);
   });
@@ -87,6 +88,7 @@ describe("每晚進度確認", () => {
   it("Telegram 傳不出去：不算問過，下一輪再試", async () => {
     const { runCheckin } = await import("@/lib/checkin");
     tables.projects.push({ ...proj() });
+    tables.project_milestones.push({ ...ms() });
     tgOk = false;
     expect(await runCheckin(NIGHT)).toBe(0);
     tgOk = true;
@@ -105,7 +107,7 @@ describe("每晚進度確認", () => {
 
     await handleCallback(cb(`ck:m:d:${M1}`));
     expect(tables.project_milestones[0].done).toBe(true);
-    expect(tables.project_logs.at(-1)).toMatchObject({ project_id: FIT_ID, text: "完成里程碑：正式上架", source: "telegram" });
+    expect(tables.project_logs.at(-1)).toMatchObject({ project_id: FIT_ID, text: "完成待辦：正式上架", source: "telegram" });
     expect(sent.at(-1)!.body.text).toContain("已打勾：正式上架");
     expect(tables.projects[0].last_activity_at).not.toBe("2026-11-01T00:00:00.000Z");
     await handleCallback(cb(`ck:m:d:${M1}`));
@@ -115,7 +117,7 @@ describe("每晚進度確認", () => {
     const r = await handleCheckinButton(`ck:m:7:${M2}`, NIGHT);
     expect(r.text).toContain("延到 11/27");
     expect(tables.project_milestones[1]).toMatchObject({ due: "2026-11-27", done: false, reminded_7: false, reminded_1: false });
-    expect(tables.project_logs.at(-1)!.text).toBe("里程碑延期：送審（11/17 → 11/27）");
+    expect(tables.project_logs.at(-1)!.text).toBe("待辦延期：送審（11/17 → 11/27）");
     expect((await handleCheckinButton(`ck:m:3:${M2}`, NIGHT)).text).toContain("延到 11/23");
 
     expect((await handleCheckinButton("ck:m:d:00000000-0000-0000-0000-000000000000")).toast).toContain("已經不在");

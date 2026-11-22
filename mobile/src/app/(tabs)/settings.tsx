@@ -1,13 +1,13 @@
-// 設定：獨立一頁（從選單進來）。語言、外觀、這支手機的通知與配對
+// 設定（從每一頁右上角的圖示進來，不在導覽列裡）：小球（要不要顯示、大小）、語言、這支手機的通知與配對。
+// 2.4 起 App 固定深色，沒有外觀選項。
 import * as Application from "expo-application";
 import Constants from "expo-constants";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Alert, Image, Linking, Pressable, View } from "react-native";
+import { Alert, Image, Linking, View } from "react-native";
 import { Icon } from "@/components/Icon";
-import { LOGO, LOGO_INV } from "@/components/Menu";
-import { Orb } from "@/components/Orb";
-import { Big, Head, Label, Line, Page, Small, Txt } from "@/components/ui";
+import { LOGO_INV } from "@/components/TabBar";
+import { Big, Card, Line, Page, RoundButton, Sec, Segment, Tag, Txt } from "@/components/ui";
 import { unpair } from "@/lib/api";
 import { L } from "@/lib/i18n";
 import { setPrefs, usePrefs } from "@/lib/prefs";
@@ -15,23 +15,6 @@ import { disablePush, pushStatus, registerPush } from "@/lib/push";
 import { useSession } from "@/lib/session";
 import { useTheme } from "@/lib/theme";
 import { clearApiCache } from "@/lib/useApi";
-
-/** 幾個選項排一排，選到的那個是黑字加底線 */
-function Choice<T extends string>({ value, options, onPick }: { value: T; options: [T, string][]; onPick: (v: T) => void }) {
-  const t = useTheme();
-  return (
-    <View style={{ flexDirection: "row", gap: 24 }} accessibilityRole="radiogroup">
-      {options.map(([v, label]) => {
-        const on = v === value;
-        return (
-          <Pressable key={v} onPress={() => onPick(v)} accessibilityRole="radio" accessibilityState={{ selected: on }} hitSlop={{ top: 4, bottom: 4, left: 10, right: 10 }} style={{ height: 44, justifyContent: "center", borderBottomWidth: 1.5, borderBottomColor: on ? t.ink : "transparent" }}>
-            <Txt size={20} lh={28} color={on ? t.ink : t.muted}>{label}</Txt>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
 
 export default function Settings() {
   const t = useTheme();
@@ -87,34 +70,47 @@ export default function Settings() {
 
   return (
     <Page>
-      <Head title={L("設定", "Settings")} right={<><Image source={t.dark ? LOGO_INV : LOGO} style={{ width: 18, height: 18 }} accessible={false} /><Txt size={14} lh={20} muted tab>{`ideabox ${version}`}</Txt></>} />
-      <View style={{ marginTop: 40 }}><Big lines={1}>{L("設定", "Settings")}</Big></View>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <RoundButton icon="back" label={L("返回", "Back")} onPress={() => (router.canGoBack() ? router.back() : router.navigate("/"))} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Image source={LOGO_INV} style={{ width: 16, height: 16 }} accessible={false} />
+          <Txt size={13.5} lh={19} muted tab>{`ideabox ${version}`}</Txt>
+        </View>
+      </View>
+      <View style={{ marginTop: 16 }}><Big>{L("設定", "Settings")}</Big></View>
 
-      <Label icon="globe" top={32}>{L("語言", "Language")}</Label>
-      <Choice value={prefs.lang} onPick={(lang) => setPrefs({ lang })} options={[["system", L("跟手機", "System")], ["zh", "中文"], ["en", "English"]]} />
+      <Sec>{L("小球", "Assistant")}</Sec>
+      <Card style={{ paddingVertical: 4 }}>
+        <Line first onPress={() => setPrefs({ orb: !prefs.orb })} label={L(`在畫面上顯示小球，${prefs.orb ? "開" : "關"}`, `Show the assistant, ${prefs.orb ? "on" : "off"}`)}>
+          <Txt style={{ flex: 1 }}>{L("在畫面上顯示小球", "Show the assistant")}</Txt>
+          <Tag tone={prefs.orb ? "main" : undefined}>{prefs.orb ? L("開", "On") : L("關", "Off")}</Tag>
+        </Line>
+      </Card>
+      {prefs.orb ? <Segment value={prefs.orbSize} onPick={(orbSize) => setPrefs({ orbSize })} options={[["s", L("小", "Small")], ["m", L("中", "Medium")], ["l", L("大", "Large")]]} /> : null}
 
-      <Label icon="contrast" top={28}>{L("外觀", "Appearance")}</Label>
-      <Choice value={prefs.look} onPick={(look) => setPrefs({ look })} options={[["system", L("跟手機", "System")], ["light", L("淺色", "Light")], ["dark", L("深色", "Dark")]]} />
+      <Sec>{L("語言", "Language")}</Sec>
+      <Segment value={prefs.lang} onPick={(lang) => setPrefs({ lang })} options={[["system", L("跟手機", "System")], ["zh", "中文"], ["en", "English"]]} />
 
-      <Label icon="phone" top={28}>{L("這支手機", "This phone")}</Label>
-      <Line onPress={onPush} label={`${L("通知", "Notifications")}，${pushText}`}>
-        <Icon name="bell" size={18} color={t.muted} />
-        <Txt style={{ flex: 1 }}>{L("通知", "Notifications")}</Txt>
-        <Small color={perm === "denied" ? t.badText : undefined}>{busy ? L("處理中", "Working") : pushText}</Small>
-      </Line>
-      <Line>
-        <Icon name="link" size={18} color={t.muted} />
-        <Txt>{L("連到", "Connected to")}</Txt>
-        <View style={{ flex: 1, alignItems: "flex-end" }}><Small>{host}</Small></View>
-      </Line>
-      <Line last onPress={confirmUnpair}>
-        <Icon name="unlink" size={18} color={t.badText} />
-        <Txt color={t.badText}>{L("解除配對", "Unpair")}</Txt>
-      </Line>
-      <Txt size={13} lh={19} muted style={{ marginTop: 12, marginRight: 96 }}>
+      <Sec>{L("這支手機", "This phone")}</Sec>
+      <Card style={{ paddingVertical: 4 }}>
+        <Line first onPress={onPush} label={`${L("通知", "Notifications")}，${pushText}`}>
+          <Icon name="bell" size={18} color={t.muted} />
+          <Txt style={{ flex: 1 }}>{L("通知", "Notifications")}</Txt>
+          <Txt size={13.5} lh={19} color={perm === "denied" ? t.badText : t.muted}>{busy ? L("處理中", "Working") : pushText}</Txt>
+        </Line>
+        <Line>
+          <Icon name="link" size={18} color={t.muted} />
+          <Txt>{L("連到", "Connected to")}</Txt>
+          <Txt size={12.5} lh={18} muted numberOfLines={1} style={{ flex: 1, textAlign: "right" }}>{host}</Txt>
+        </Line>
+        <Line onPress={confirmUnpair}>
+          <Icon name="unlink" size={18} color={t.badText} />
+          <Txt color={t.badText}>{L("解除配對", "Unpair")}</Txt>
+        </Line>
+      </Card>
+      <Txt size={12.5} lh={20} muted style={{ marginTop: 14 }}>
         {note ?? L("有時間的排程開始前 30 分鐘、早上 8 點的今日排程、產品掛掉或恢復時會通知你。App 只能看，要改資料請到網頁或用 Telegram。", "You get a push 30 minutes before timed events, at 8:00 for today's schedule, and when a product goes down or recovers. The app is read-only. Edit on the web or by Telegram.")}
       </Txt>
-      <View style={{ alignItems: "flex-end", marginRight: -80, marginTop: 8 }}><Orb size={176} /></View>
     </Page>
   );
 }

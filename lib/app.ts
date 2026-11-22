@@ -4,7 +4,7 @@ import { db } from "./db";
 import { taipeiDate } from "./dates";
 import { listProjects } from "./projects";
 import { listOffice } from "./office";
-import { displayStatus, staffOf } from "./officeLogic";
+import { displayStatus, handoffLive, staffKey, staffOf } from "./officeLogic";
 import { CATEGORY_LABEL, type Category } from "./labels";
 import {
   dueReminders,
@@ -230,12 +230,14 @@ export async function getUiTheme() {
 export async function homeData(now = Date.now(), access: Access = { owner: true }) {
   const today = taipeiDate(new Date(now));
   const until = addDays(today, 14);
-  const [{ projects: all }, ev, ms, mon, theme] = await Promise.all([
+  const [{ projects: all }, ev, ms, mon, theme, open] = await Promise.all([
     listProjects(),
     db().from("project_events").select("*").lte("start_date", until).gte("end_date", today).order("start_date").limit(200),
     db().from("project_milestones").select("id, project_id, title, due, done").eq("done", false).gte("due", today).lte("due", addDays(today, 30)).order("due"),
     db().from("monitor_status").select("service, product, ok, changed_at, last_error"),
     getUiTheme(),
+    // 還沒做的待辦（只拿專案與日期，算每個專案幾件過期／這週到期／總共幾件；App 2.3 起用）
+    db().from("project_milestones").select("project_id, due").eq("done", false).limit(2000),
   ]);
   // 監控產品的名稱（monitor.ts 也會引用這個檔案，所以用動態載入避免互相引用）
   const allProducts = await (await import("./monitor")).monitorProducts().catch(() => []);
@@ -247,9 +249,28 @@ export async function homeData(now = Date.now(), access: Access = { owner: true 
     const p = products.find((x) => x.key === product);
     return `${p?.label ?? product}・${p?.services.find((x) => x.id === service)?.zh ?? service}`;
   };
+  const week = addDays(today, 7);
+  const todo: Record<string, { open: number; late: number; week: number }> = {};
+  for (const m of filterByProject(access, (open.data ?? []) as { project_id: string; due: string | null }[])) {
+    const c = (todo[m.project_id] ??= { open: 0, late: 0, week: 0 });
+    c.open++;
+    if (m.due && m.due < today) c.late++;
+    else if (m.due && m.due <= week) c.week++;
+  }
+  // 過期的總數只算進行中的專案（暫停、完成的不提醒）
+  const overdue = projects.filter((p) => p.status === "active").reduce((n, p) => n + (todo[p.id]?.late ?? 0), 0);
+  // 辦公室有幾個人在等你（導覽列的橘點用；只給主人，讀不到就當 0）
+  const office_waiting = access.owner
+    ? await listOffice(now)
+        .then(({ sessions }) => staffOf(sessions, now).filter((s) => ["waiting", "permission"].includes(displayStatus(s, now))).length)
+        .catch(() => 0)
+    : 0;
   return {
     today,
     theme,
+    todo,
+    overdue,
+    office_waiting,
     // 這支手機能看什麼（App 依這個顯示分頁；舊版 App 不認得這個欄位也沒關係）
     access: { owner: access.owner, name: access.owner ? null : access.name, tabs: appTabs(access), can_edit: access.owner || access.canEdit },
     // 全部專案（含已完成，照排序）：App 依這個順序分配顏色，畫面上自己過濾狀態
@@ -284,7 +305,7 @@ export async function calendarData(month: string, access: Access = { owner: true
   };
 }
 
-/** 單一專案：階段、里程碑、最近 30 筆日誌、接下來的排程 */
+/** 單一專案：階段、待辦、最近 30 筆日誌、接下來的排程。milestones 只放有日期的（舊版 App 會拿日期來算），沒日期、還沒做的放 todos */
 export async function projectData(slug: string, now = Date.now(), access: Access = { owner: true }) {
   const { projects } = await listProjects();
   const p = projects.find((x) => x.slug === slug);
@@ -297,7 +318,8 @@ export async function projectData(slug: string, now = Date.now(), access: Access
   ]);
   return {
     project: { id: p.id, slug: p.slug, name: p.name, status: p.status, stages: p.stages, stage_index: p.stage, next_step: p.next_step, description: p.description ?? null, links: p.links ?? {}, last_activity_at: p.last_activity_at },
-    milestones: (ms.data ?? []) as MilestoneRow[],
+    milestones: ((ms.data ?? []) as (Omit<MilestoneRow, "due"> & { due: string | null })[]).filter((m): m is MilestoneRow => !!m.due),
+    todos: ((ms.data ?? []) as { id: string; title: string; due: string | null; done: boolean }[]).filter((m) => !m.due && !m.done).map((m) => ({ id: m.id, title: m.title })),
     logs: (logs.data ?? []) as { id: number; at: string; source: string; text: string }[],
     events: ((ev.data ?? []) as EventRow[]).map(eventOut),
   };
@@ -326,7 +348,7 @@ export async function ideasData(access: Access = { owner: true }) {
 
 /** 辦公室：每個有資料夾的專案一間房間＋大廳；房間裡是「人」（同專案同職位＝同一個人），狀態已換算好 */
 export async function officeData(now = Date.now()) {
-  const [{ projects }, { sessions, ready }] = await Promise.all([listProjects(), listOffice(now)]);
+  const [{ projects }, { sessions, handoffs: hs, ready }] = await Promise.all([listProjects(), listOffice(now)]);
   const rooms = projects.filter((p) => p.folder?.trim() && p.status !== "done");
   const known = new Set(rooms.map((p) => p.id));
   const people = staffOf(sessions, now).map((s) => ({
@@ -340,9 +362,24 @@ export async function officeData(now = Date.now()) {
     sessions: s.sessions,
     updated_at: s.updated_at,
   }));
+  // 交接中：接手的人還在做（跟網頁畫連線的條件一樣），而且交的跟接的不是同一個人；App 2.4 起畫成小球滾過去
+  const byId = new Map(sessions.map((x) => [x.session_id, x]));
+  const seen = new Set<string>();
+  const handoffs: { from: string; to: string }[] = [];
+  for (const h of hs) {
+    const a = byId.get(h.from);
+    const b = h.to ? byId.get(h.to) : undefined;
+    if (!a || !b || !handoffLive(b, now)) continue;
+    const from = staffKey(a);
+    const to = staffKey(b);
+    if (from === to || seen.has(`${from}>${to}`)) continue;
+    seen.add(`${from}>${to}`);
+    handoffs.push({ from, to });
+  }
   return {
     ready,
     now,
+    handoffs,
     // 顏色照全部專案的順序（跟網頁、App 其他頁一致）
     projects: projects.map((p) => ({ id: p.id })),
     rooms: [...rooms.map((p) => ({ id: p.id, name: p.name, stage: p.stages[p.stage] ?? null })), { id: "lobby", name: "大廳", stage: null }],

@@ -225,7 +225,7 @@ describe("專案編輯權限（伺服器端）", () => {
     viewer = accessOf(member());
     const act = await import("@/app/(dash)/projects/actions");
     expect(await act.toggleMilestone("aaaaaaaa-0000-0000-0000-000000000001")).toEqual({ ok: true });
-    expect(tables.project_logs.at(-1)).toMatchObject({ project_id: A, text: "小林：完成里程碑：送件" });
+    expect(tables.project_logs.at(-1)).toMatchObject({ project_id: A, text: "小林：完成待辦：送件" });
     expect(await act.toggleMilestone("aaaaaaaa-0000-0000-0000-000000000002")).toEqual({ ok: false });
     expect(tables.project_milestones[1].done).toBe(false);
     expect(await act.addLog(B, "偷改")).toEqual({ ok: false });
