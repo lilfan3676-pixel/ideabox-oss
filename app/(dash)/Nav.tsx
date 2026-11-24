@@ -49,7 +49,7 @@ const CORE_PAGES: NavItem[] = [
   { href: "/projects", label: "專案", icon: <IconClipboard /> },
   { href: "/social", label: "社群助手", short: "社群", icon: <IconMegaphone /> },
   { href: "/office", label: "辦公室", icon: <IconBox /> },
-  { href: "/grants", label: "補助雷達", short: "補助", more: true, icon: <IconSparkle /> }, // 一週才更新一次，收在「更多」
+  { href: "/grants", label: "補助雷達", short: "補助", icon: <IconSparkle /> },
   { href: "/monitor", label: "監控", icon: <IconPulse /> },
   { href: "/costs", label: "成本", icon: <IconPercent /> },
   { href: "/settings", label: "設定", hideSm: true, icon: <IconSettings /> }, // 手機版放在頭像選單裡
