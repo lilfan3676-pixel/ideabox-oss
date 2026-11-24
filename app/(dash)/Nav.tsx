@@ -10,11 +10,13 @@ import { saveUiTheme } from "./actions";
 import { metaModules } from "@/lib/modules/meta";
 import { can, memberViews, navHrefs, type Access } from "@/lib/accessLogic";
 import { useAccess } from "./AccessContext";
+import { inProject, pageOf, splitNav } from "@/lib/navLogic";
 import {
   IconAlert,
   IconArchive,
   IconCalendar,
   IconCheck,
+  IconDots,
   IconClipboard,
   IconClock,
   IconGrid,
@@ -40,12 +42,14 @@ import {
   IconSettings,
 } from "./icons";
 
-const CORE_PAGES: Array<{ href: string; label: string; short?: string; hideSm?: boolean; icon?: React.ReactNode }> = [
+type NavItem = { href: string; label: string; short?: string; hideSm?: boolean; icon?: React.ReactNode; /** 某個專案自己的工具（專案短名） */ project?: string; /** 收進「更多」 */ more?: boolean };
+
+const CORE_PAGES: NavItem[] = [
   { href: "/", label: "點子庫", short: "點子", icon: <IconBulb /> },
   { href: "/projects", label: "專案", icon: <IconClipboard /> },
   { href: "/social", label: "社群助手", short: "社群", icon: <IconMegaphone /> },
   { href: "/office", label: "辦公室", icon: <IconBox /> },
-  { href: "/grants", label: "補助雷達", short: "補助", icon: <IconSparkle /> },
+  { href: "/grants", label: "補助雷達", short: "補助", more: true, icon: <IconSparkle /> }, // 一週才更新一次，收在「更多」
   { href: "/monitor", label: "監控", icon: <IconPulse /> },
   { href: "/costs", label: "成本", icon: <IconPercent /> },
   { href: "/settings", label: "設定", hideSm: true, icon: <IconSettings /> }, // 手機版放在頭像選單裡
@@ -56,7 +60,7 @@ const PAGES = (() => {
   const list = [...CORE_PAGES];
   for (const p of metaModules.flatMap((m) => m.pages ?? [])) {
     const at = p.after ? list.findIndex((x) => x.href === p.after) + 1 : list.length - 1;
-    list.splice(at > 0 ? at : list.length - 1, 0, { href: p.href, label: p.label, short: p.short, hideSm: p.hideSm, icon: p.icon });
+    list.splice(at > 0 ? at : list.length - 1, 0, { href: p.href, label: p.label, short: p.short, hideSm: p.hideSm, icon: p.icon, project: p.project, more: p.more });
   }
   return list;
 })();
@@ -64,7 +68,7 @@ const PAGES = (() => {
 // 導覽文字的英文（中文是原文，切換成英文介面時查這張表）
 const NAV_EN: Record<string, string> = {
   點子庫: "Ideas", 點子: "Ideas", 專案: "Projects", 辦公室: "Office", 整棟大樓: "Whole building", 全部專案: "All projects", 專案卡片: "Project cards", 月曆: "Calendar", 進行中: "Active", "暫停／完成": "Paused / done", 設計庫: "Design", 設計: "Design", 封測: "Beta", 補助雷達: "Grants", 補助: "Grants",
-  監控: "Monitor", 成本: "Costs", 設定: "Settings",
+  監控: "Monitor", 成本: "Costs", 設定: "Settings", 更多: "More",
   社群助手: "Social", 社群: "Social", 一週看板: "Week board", 排程清單: "All posts", 靈感庫: "Swipe file", 海巡: "Patrol", 成效: "Results", 互動: "Engage", 檔案健檢: "Profile check",
   待審核: "To review", 已核准: "Approved", 已同步: "Synced", 已淘汰: "Rejected",
   全部點子: "All ideas", 本週: "This week", 待補充: "Needs input", 已採用: "Adopted",
@@ -87,17 +91,35 @@ const navT = (L: (zh: string, en: string) => string, zh: string) => L(zh, NAV_EN
 /** 給手機版「更多」選單用：所有頁面（網址、中文、英文） */
 export const ALL_PAGES: Array<[string, string, string]> = PAGES.map((p) => [p.href, p.label, NAV_EN[p.label] ?? p.label]);
 
-function currentPage(pathname: string) {
+/** 手機版「更多」選單：搬進專案頁的工具不列（從專案頁的分頁進去） */
+export function menuPages(a: Access, slugs: readonly string[]): Array<[string, string, string]> {
+  const hidden = new Set(splitNav(PAGES, a.owner, slugs).tools.map((p) => p.href));
+  return ALL_PAGES.filter(([href]) => !hidden.has(href));
+}
+
+/** 這個網址是不是某個專案自己的工具頁（而且已經收進專案頁）：回傳專案短名 */
+function toolProject(pathname: string, a: Access, slugs: readonly string[]): string | null {
+  const hit = pageOf(PAGES, pathname);
+  return hit && inProject(hit, a.owner, slugs) ? hit.project! : null;
+}
+
+/** ctx＝看的人與現有的專案：專案自己的工具頁算在「專案」底下（左側亮的是專案） */
+function currentPage(pathname: string, ctx?: { a: Access; slugs: readonly string[] }) {
+  if (ctx && toolProject(pathname, ctx.a, ctx.slugs)) return "/projects";
   if (pathname.startsWith("/design")) return "/"; // 設計庫已併進點子庫（/design/brief 簡報頁仍在）
   if (pathname.startsWith("/account")) return "/account"; // 合夥人的「我的帳號」：不在選單裡
+  // 模組掛在某一頁檢視列裡的「另一個網址」（RailItem.href）：到了那個網址，仍然算在那一頁底下
+  for (const [page, r] of Object.entries(RAIL)) if (r.items.some((it) => it.href && (pathname === it.href || pathname.startsWith(it.href + "/")))) return page;
   const hit = PAGES.find((p) => p.href !== "/" && (pathname === p.href || pathname.startsWith(p.href + "/")));
   return hit?.href ?? "/";
 }
 
-/** 合夥人只看得到有權限的頁面（主人全部） */
-function visiblePages(a: Access) {
+/** 合夥人只看得到有權限的頁面（主人全部）；main＝左側圖示列、more＝收在「更多」裡（專案自己的工具不在這裡，在專案頁） */
+function visiblePages(a: Access, slugs: readonly string[]) {
   const allowed = navHrefs(a);
-  return allowed ? PAGES.filter((p) => allowed.includes(p.href)) : PAGES;
+  const { main, more } = splitNav(allowed ? PAGES.filter((p) => allowed.includes(p.href)) : PAGES, a.owner, slugs);
+  // 「更多」排在「設定」前面；裡面只有一個也照樣收（使用者要選單短）
+  return { main, more };
 }
 
 /** 分頁在左側圖示列的順序（換頁動畫依此決定往左或往右滑） */
@@ -113,20 +135,34 @@ function usePendingValue(actual: string) {
 }
 
 /** 頂部列左邊的頁面名稱（左側圖示列只有圖示，這裡寫出現在在哪一頁） */
-export function PageName() {
-  const page = currentPage(usePathname());
+export function PageName({ slugs = [] }: { slugs?: string[] }) {
+  const page = currentPage(usePathname(), { a: useAccess(), slugs });
   const L = useL();
   const p = PAGES.find((x) => x.href === page);
   return <h1 className="page-name">{p ? navT(L, p.label) : page === "/account" ? L("我的帳號", "My account") : ""}</h1>;
 }
 
 /** 左側圖示列：切換頁面（滑過去顯示名稱） */
-export function TopNav() {
-  const actual = currentPage(usePathname());
+export function TopNav({ slugs = [] }: { slugs?: string[] }) {
+  const a = useAccess();
+  const actual = currentPage(usePathname(), { a, slugs });
   const [page, setPage] = usePendingValue(actual);
   const L = useL();
   const router = useRouter();
-  const PAGES = visiblePages(useAccess());
+  const { main: PAGES, more: MORE } = visiblePages(a, slugs);
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [actual]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onDown = (e: MouseEvent) => !(e.target as HTMLElement).closest(".rail-more") && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open]);
 
   // 鍵盤左右鍵切換頁面（正在打字、按著修飾鍵、或有彈出視窗時不作用）
   useEffect(() => {
@@ -146,27 +182,47 @@ export function TopNav() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [page, router, setPage, PAGES]);
+  const link = (p: NavItem) => (
+    <Link
+      key={p.href}
+      href={p.href}
+      prefetch={true}
+      className={`rail-btn ${p.href === page ? "active" : ""}`}
+      aria-label={navT(L, p.label)}
+      aria-current={p.href === actual ? "page" : undefined}
+      data-tip={navT(L, p.label)}
+      onClick={() => setPage(p.href)}
+    >
+      {p.icon ?? <IconGrid />}
+    </Link>
+  );
+  // 「更多」放在最後一個（設定）前面
+  const last = MORE.length && PAGES.length ? PAGES[PAGES.length - 1] : null;
   return (
     <nav className="rail-group page-nav" aria-label={L("主要頁面", "Main pages")}>
-      {PAGES.map((p) => (
-        <Link
-          key={p.href}
-          href={p.href}
-          prefetch={true}
-          className={`rail-btn ${p.href === page ? "active" : ""}`}
-          aria-label={navT(L, p.label)}
-          aria-current={p.href === actual ? "page" : undefined}
-          data-tip={navT(L, p.label)}
-          onClick={() => setPage(p.href)}
-        >
-          {p.icon ?? <IconGrid />}
-        </Link>
-      ))}
+      {(last ? PAGES.slice(0, -1) : PAGES).map(link)}
+      {MORE.length > 0 && (
+        <div className="rail-more">
+          <button type="button" className={`rail-btn ${MORE.some((p) => p.href === page) ? "active" : ""}`} aria-label={L("更多", "More")} aria-expanded={open} aria-haspopup="menu" data-tip={open ? undefined : L("更多", "More")} onClick={() => setOpen(!open)}>
+            <IconDots />
+          </button>
+          {open && (
+            <div className="rail-more-menu glass" role="menu">
+              {MORE.map((p) => (
+                <Link key={p.href} href={p.href} role="menuitem" className={`menu-item ${p.href === page ? "active" : ""}`} onClick={() => { setPage(p.href); setOpen(false); }}>
+                  {p.icon ?? <IconGrid />} {navT(L, p.label)}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {last && link(last)}
     </nav>
   );
 }
 
-type RailItem = { key: string; label: string; icon: React.ReactNode };
+type RailItem = { key: string; label: string; icon: React.ReactNode; href?: string };
 
 const CORE_RAIL: Record<string, { def: string; items: RailItem[] }> = {
   "/": {
@@ -244,7 +300,7 @@ const CORE_RAIL: Record<string, { def: string; items: RailItem[] }> = {
 const RAIL: Record<string, { def: string; server?: boolean; items: RailItem[] }> = (() => {
   const out: Record<string, { def: string; server?: boolean; items: RailItem[] }> = Object.fromEntries(Object.entries(CORE_RAIL).map(([k, v]) => [k, { ...v, items: [...v.items] }]));
   for (const [page, r] of metaModules.flatMap((m) => Object.entries(m.rails ?? {}))) {
-    const items = r.items.map((it) => ({ key: it.key, label: it.label, icon: it.icon }));
+    const items = r.items.map((it) => ({ key: it.key, label: it.label, icon: it.icon, href: it.href }));
     if (out[page]) {
       out[page].items.push(...items);
       if (r.server) out[page].server = true;
@@ -278,8 +334,11 @@ function railFor(page: string, a: Access) {
 export function SideRail({ children, projects = [] }: { children?: React.ReactNode; projects?: RailProject[] }) {
   const pathname = usePathname();
   const sp = useSearchParams();
-  const page = currentPage(pathname);
-  const rail = railFor(page, useAccess());
+  const a = useAccess();
+  const slugs = projects.map((p) => p.slug);
+  const page = currentPage(pathname, { a, slugs });
+  const toolOf = toolProject(pathname, a, slugs); // 在某個專案自己的工具頁：下面那排專案捷徑亮那個專案
+  const rail = railFor(page, a);
   const L = useL();
   const onBase = pathname === page; // 例如在 /design/brief 時就不是
   const view = !onBase && pathname.startsWith("/design/brief") ? "brief" : !onBase ? "" : (sp.get("view") ?? rail.def);
@@ -298,8 +357,9 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
     <aside className="rail" aria-label={L("檢視", "Views")}>
       <div className="rail-group">
         {rail.items.map((it) => {
-          const href = hrefFor(it.key);
-          const active = it.key === view && !(page === "/office" && onBase && sp.get("room"));
+          const linked = it.href; // 連到另一個網址的項目：照一般換頁走
+          const href = linked ?? hrefFor(it.key);
+          const active = linked ? pathname === linked || pathname.startsWith(linked + "/") : it.key === view && !(page === "/office" && onBase && sp.get("room"));
           return (
             <Link
               key={it.key}
@@ -308,7 +368,7 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
               onClick={(e) => {
                 // 從其他頁過來、或這頁的檢視要伺服器重新準備資料（模組的頁面可以這樣設定）時走一般換頁；
                 // 只改網址的話伺服器不會重給畫面，會變成「按了網址有變、畫面沒切」
-                if (!onBase || rail.server) return;
+                if (linked || !onBase || rail.server) return;
                 e.preventDefault();
                 if (!active) window.history.pushState(null, "", href);
               }}
@@ -329,7 +389,7 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
           {projects.filter((p) => page !== "/office" || p.room).map((p) => {
             const office = page === "/office";
             const href = office ? `/office?room=${p.slug}` : `/projects/${p.slug}`;
-            const active = office ? onBase && sp.get("room") === p.slug : pathname === href;
+            const active = office ? onBase && sp.get("room") === p.slug : pathname === href || toolOf === p.slug;
             return (
               <Link
                 key={p.slug}
@@ -354,6 +414,45 @@ export function SideRail({ children, projects = [] }: { children?: React.ReactNo
       )}
       {children}
     </aside>
+  );
+}
+
+/** 專案自己的工具頁：這一頁的檢視（例如未處理／嚴重…）排在專案分頁下面。
+ *  頂部列那一排在這種頁面是「專案」的檢視，所以工具自己的放這裡；同一頁切換只改網址。 */
+export function ToolViews({ page }: { page: string }) {
+  const pathname = usePathname();
+  const sp = useSearchParams();
+  const L = useL();
+  const rail = RAIL[page];
+  if (!rail || pathname !== page) return null;
+  const view = sp.get("view") ?? rail.def;
+  return (
+    <nav className="pd-sub" aria-label={L("檢視", "Views")}>
+      {rail.items.map((it) => {
+        const q = new URLSearchParams(sp.toString());
+        q.delete("msg");
+        if (it.key === rail.def) q.delete("view");
+        else q.set("view", it.key);
+        const href = q.toString() ? `${page}?${q}` : page;
+        const active = it.key === view;
+        return (
+          <Link
+            key={it.key}
+            href={href}
+            prefetch={false}
+            className={active ? "active" : ""}
+            aria-current={active ? "true" : undefined}
+            onClick={(e) => {
+              if (rail.server) return;
+              e.preventDefault();
+              if (!active) window.history.pushState(null, "", href);
+            }}
+          >
+            {navT(L, it.label)}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
 

@@ -14,6 +14,7 @@ import { WebAssistant } from "./WebAssistant";
 import { IconBell, IconSearch } from "./icons";
 import { FOLDER_COLORS } from "@/lib/folderLogic";
 import { ModeToggle, PageName, SideRail, ThemeDock, TopNav, type RailProject } from "./Nav";
+import { PageModeSwitch } from "./PageModeSwitch";
 import { PortalFx } from "./PortalFx";
 import { modules } from "@/lib/modules/registry";
 
@@ -56,6 +57,7 @@ export default async function DashLayout({ children }: { children: React.ReactNo
     access.owner ? pendingCounts().catch(() => ({ ideas: 0, grants: 0, monitor: 0 })) : { ideas: 0, grants: 0, monitor: 0 },
     railProjects(access).catch(() => []),
   ]);
+  const slugs = projects.map((p) => p.slug); // 選單用：專案自己的工具，專案存在才收進專案頁
   const extra = access.owner ? modules().flatMap((m) => m.bell ?? []) : [];
   const extraCounts = await Promise.all(extra.map((b) => b.count().catch(() => 0)));
   const L = await getL();
@@ -67,42 +69,58 @@ export default async function DashLayout({ children }: { children: React.ReactNo
   ];
   const bell = access.owner ? allBell : [];
 
+  // 搜尋、通知、帳號：電腦版放在最上面那一列的右邊，手機版留在頂部列（兩邊各畫一份，用樣式決定顯示哪一份）
+  const actions = (
+    <div className="top-actions">
+      {access.owner && (
+        <Link href="/#search" className="circle-btn hide-sm" aria-label={L("搜尋點子", "Search ideas")}>
+          <IconSearch size={17} />
+        </Link>
+      )}
+      <Suspense fallback={<span className="circle-btn" aria-hidden><IconBell size={17} /></span>}>
+        <BellMenu items={bell} />
+      </Suspense>
+      <AccountMenu email={access.owner ? email : `${access.name}・${email}`} logout={logout} />
+    </div>
+  );
+
   return (
     <AccessProvider access={access}>
     <div className="app-bg">
       {/* Portal 主題的背景圖放在獨立的固定圖層（其他主題不顯示），換頁、畫面有動畫時不用重畫背景 */}
       <div className="pt-bg" aria-hidden />
       <div className="shell">
-      {/* 左側圖示列：頁面（手機版不顯示，改用底部分頁列） */}
-      <aside className="page-rail" aria-label={L("頁面", "Pages")}>
+      {/* 最上面一列（電腦版）：標誌｜切換｜搜尋、通知、帳號。放在大面板和左側列的外面，其他東西都在它下面 */}
+      <div className="global-bar">
         <Link href="/" className="logo" aria-label={L("ideabox 首頁", "ideabox home")}>
           <LogoMark size={22} />
         </Link>
+        <div className="global-mid">
+          {access.owner && (
+            <Suspense fallback={null}>
+              <PageModeSwitch />
+            </Suspense>
+          )}
+        </div>
+        {actions}
+      </div>
+      {/* 左側圖示列：頁面（手機版不顯示，改用底部分頁列） */}
+      <aside className="page-rail" aria-label={L("頁面", "Pages")}>
         <Suspense fallback={<nav className="rail-group page-nav" />}>
-          <TopNav />
+          <TopNav slugs={slugs} />
         </Suspense>
         <ModeToggle />
       </aside>
       <div className="frame">
-        {/* 頂部列：頁面名稱＋這一頁的檢視切換＋搜尋、通知、帳號（手機版只留檢視切換） */}
+        {/* 頂部列：頁面名稱＋這一頁的檢視切換（搜尋、通知、帳號在電腦版搬到最上面那一列，這裡的只給手機版） */}
         <header className="topbar">
           <Suspense fallback={<h1 className="page-name" />}>
-            <PageName />
+            <PageName slugs={slugs} />
           </Suspense>
           <Suspense fallback={<aside className="rail" />}>
             <SideRail projects={projects} />
           </Suspense>
-          <div className="top-actions">
-            {access.owner && (
-              <Link href="/#search" className="circle-btn hide-sm" aria-label={L("搜尋點子", "Search ideas")}>
-                <IconSearch size={17} />
-              </Link>
-            )}
-            <Suspense fallback={<span className="circle-btn" aria-hidden><IconBell size={17} /></span>}>
-              <BellMenu items={bell} />
-            </Suspense>
-            <AccountMenu email={access.owner ? email : `${access.name}・${email}`} logout={logout} />
-          </div>
+          {actions}
         </header>
 
         <div className="frame-body">
@@ -112,7 +130,7 @@ export default async function DashLayout({ children }: { children: React.ReactNo
       </div>
       <ThemeDock />
       {access.owner ? <WebAssistant /> : null}
-      <MobileTabBar items={bell} logout={logout} />
+      <MobileTabBar items={bell} logout={logout} slugs={slugs} />
       <Suspense fallback={null}>
         <PortalFx />
       </Suspense>

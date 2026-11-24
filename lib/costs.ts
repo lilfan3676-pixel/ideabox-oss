@@ -12,7 +12,7 @@ import {
 } from "./costCalc";
 import { taipeiDate } from "./dates";
 import { db } from "./db";
-import { esc, sendToOwner } from "./telegram";
+import { esc, sendToOwnerWithButtons } from "./telegram";
 
 const FX_FALLBACK = 32;
 export type Fx = { rate: number; day: string | null; fallback: boolean };
@@ -76,14 +76,28 @@ export function monthStartIso(month: string): string {
   return new Date(Date.parse(`${month}-01T00:00:00+08:00`)).toISOString();
 }
 
-/** 每天：更新匯率、把過期的扣款日往後推、續約前提醒 */
+const REMINDED_KEY = "cost_reminded"; // { 開銷 id: 上次提醒的日期 }，同一天不重複傳
+
+async function remindedDays(): Promise<Record<string, string>> {
+  const { data } = await db().from("settings").select("value").eq("key", REMINDED_KEY).maybeSingle();
+  try {
+    const v = JSON.parse((data as { value: string } | null)?.value ?? "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** 每天：更新匯率、把過期的扣款日往後推、續約前提醒（扣款前幾天起每天一則，按了按鈕才停） */
 export async function runCostDaily() {
   const today = taipeiDate();
   const fx = await getFx(true);
   const expenses = await listExpenses();
   const nameOf = await productNames().catch(() => (p: string) => p);
   let rolled = 0;
-  const reminders: string[] = [];
+  let reminded = 0;
+  const last = await remindedDays();
+  const next: Record<string, string> = {};
   for (const e of expenses) {
     if (e.kind !== "subscription" || !e.active || !e.next_due || !e.cycle) continue;
     let due = e.next_due;
@@ -93,18 +107,27 @@ export async function runCostDaily() {
       rolled++;
     }
     const cur = { ...e, next_due: due };
-    if (shouldRemind(cur, today)) {
+    if (last[e.id]) next[e.id] = last[e.id];
+    if (shouldRemind(cur, today, last[e.id])) {
       const left = daysUntil(due, today);
       const when = left === 0 ? "今天" : left === 1 ? "明天" : `${left} 天後（${due.slice(5).replace("-", "/")}）`;
       const money = e.currency === "USD" ? `US$${e.amount}（約 ${twd(toTwd(e.amount, "USD", fx.rate))}）` : twd(e.amount);
-      reminders.push(`・${esc(e.name)}（${esc(nameOf(e.product))}）${when}扣款 ${money}${e.cycle === "yearly" ? "・年付" : ""}`);
-      await db().from("expenses").update({ reminded_for: due }).eq("id", e.id);
+      const html = [
+        "💳 <b>續約提醒</b>",
+        `${esc(e.name)}（${esc(nameOf(e.product))}）${when}扣款 ${money}${e.cycle === "yearly" ? "・年付" : ""}`,
+        "",
+        left === 0 ? "不再使用的話，今天要取消訂閱。" : "不再使用的話，記得先取消訂閱。到扣款那天為止每天提醒一次，按下面的按鈕就停。",
+      ].join("\n");
+      // 一筆一則，按鈕才對得到是哪一筆
+      const id = await sendToOwnerWithButtons(html, [[{ text: "知道了，這期不用再提醒", data: `cx:k:${e.id}` }], [{ text: "已經取消訂閱", data: `cx:c:${e.id}` }]]).catch(() => null);
+      if (id !== null) {
+        next[e.id] = today;
+        reminded++;
+      }
     }
   }
-  if (reminders.length) {
-    await sendToOwner(["💳 <b>續約提醒</b>", ...reminders, "", "不再使用的話，記得先取消訂閱。"].join("\n")).catch(() => null);
-  }
-  return { fx: fx.rate, rolled, reminded: reminders.length };
+  if (JSON.stringify(next) !== JSON.stringify(last)) await db().from("settings").upsert({ key: REMINDED_KEY, value: JSON.stringify(next) }, { onConflict: "key" });
+  return { fx: fx.rate, rolled, reminded };
 }
 
 /** 產品短名 → 名稱（專案名；共用、ideabox） */
@@ -130,4 +153,19 @@ export async function costDigestLines(): Promise<string[]> {
     `訂閱 ${twd(s.subscriptions)}・一次性 ${twd(s.oneTime)}・AI 用量 ${twd(s.ai)}`,
     ...(parts.length ? [parts.join("・")] : []),
   ];
+}
+
+/** 續約提醒的按鈕：cx:k:<id>＝知道了，這期不用再提醒；cx:c:<id>＝已經取消訂閱（標成停用，不再算進之後的支出） */
+export async function handleCostButton(data: string): Promise<{ toast: string; done: boolean; text?: string }> {
+  const m = data.match(/^cx:(k|c):([\w-]{1,40})$/);
+  if (!m) return { toast: "", done: false };
+  const { data: row } = await db().from("expenses").select("*").eq("id", m[2]).maybeSingle();
+  const e = row as Expense | null;
+  if (!e) return { toast: "找不到這筆訂閱，可能已經刪掉了", done: true };
+  if (m[1] === "c") {
+    await db().from("expenses").update({ active: false }).eq("id", e.id);
+    return { toast: "已標成停用", done: true, text: `✅ ${esc(e.name)} 已標成停用，之後不會再提醒，也不算進之後的支出。` };
+  }
+  await db().from("expenses").update({ reminded_for: e.next_due }).eq("id", e.id);
+  return { toast: "這期不再提醒", done: true, text: `👌 ${esc(e.name)} 這次扣款不再提醒，下一期會再提醒。` };
 }

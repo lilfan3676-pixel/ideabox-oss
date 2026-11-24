@@ -147,7 +147,7 @@ describe("每週內容規劃", () => {
     expect(b.system).toContain("不能連續兩則同一種");
     const user = b.messages[0].content as string;
     expect(user).toContain("2026-11-25（週三）");
-    expect(user).not.toContain("2026-11-24");
+    expect(user).not.toContain("2026-11-24（週二）"); // 只看「可以排的日期」：日誌的日期是今天，測試在 11/24 跑時會剛好出現
     expect(user).toContain("這週有人問會不會被同學看到");
     expect(user).toContain("第一天 40 人加好友");
     expect(user).not.toContain("看了 30 篇");

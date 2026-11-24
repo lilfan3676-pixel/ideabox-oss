@@ -237,12 +237,19 @@ export function daysUntil(day: string, today: string): number {
   return Math.round((Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
 }
 
-/** 是否該提醒續約：年付前 7 天、月付前 1 天，同一次扣款只提醒一次 */
-export function shouldRemind(e: Expense, today: string): boolean {
+/** 扣款前幾天開始提醒 */
+export const REMIND_DAYS = { monthly: 3, yearly: 7 } as const;
+
+/**
+ * 是否該提醒續約：月付前 3 天、年付前 7 天起，到扣款當天每天提醒一次，
+ * 直到按了「知道了」（reminded_for＝這次的扣款日）。lastDay＝上一次提醒是哪一天，同一天不重複。
+ */
+export function shouldRemind(e: Expense, today: string, lastDay?: string | null): boolean {
   if (e.kind !== "subscription" || !e.active || !e.next_due || !e.cycle) return false;
   if (e.reminded_for === e.next_due) return false;
+  if (lastDay === today) return false;
   const left = daysUntil(e.next_due, today);
-  return left >= 0 && left <= (e.cycle === "yearly" ? 7 : 1);
+  return left >= 0 && left <= REMIND_DAYS[e.cycle];
 }
 
 // ---------- 金額 ----------

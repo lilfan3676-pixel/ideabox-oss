@@ -67,7 +67,8 @@ export type TgDestination = {
 
 /** 模組加在專案詳細頁的分頁：key 是網址上的 ?tab=，render 只有切到這個分頁時才會呼叫 */
 /** href＝這個分頁其實在別的頁面，點了直接過去（舊網址 ?tab=<key> 也會轉過去）；沒有 href 的要給 render */
-export type ProjectTab = { key: string; label: [string, string]; count?: number; href?: string; render?: () => Promise<React.ReactNode> };
+/** tool＝這個專案自己的工具頁（href 那一頁上面會有同一排專案分頁，所以不標「↗」） */
+export type ProjectTab = { key: string; label: [string, string]; count?: number; href?: string; tool?: boolean; render?: () => Promise<React.ReactNode> };
 
 export type BellDef = {
   key: string;
@@ -104,8 +105,18 @@ export type ServerModule = {
 
 // ---------- 畫面用（瀏覽器也會載入，只能放純資料與圖示） ----------
 
-export type NavPage = { href: string; label: string; en: string; short?: string; shortEn?: string; hideSm?: boolean; /** 排在哪個頁面後面 */ after?: string; /** 左側頁面圖示列的圖示（沒給就用格狀圖示） */ icon?: React.ReactNode };
-export type RailItem = { key: string; label: string; en: string; icon: React.ReactNode };
+export type NavPage = {
+  href: string; label: string; en: string; short?: string; shortEn?: string; hideSm?: boolean;
+  /** 排在哪個頁面後面 */ after?: string;
+  /** 左側頁面圖示列的圖示（沒給就用格狀圖示） */ icon?: React.ReactNode;
+  /** 這一頁是某個專案自己的工具（專案短名）：不放在左側選單，從那個專案頁的分頁進去（模組用 projectTabs 給分頁）。
+   *  那個專案不存在、或看的人是合夥人時，照舊放在選單。 */
+  project?: string;
+  /** 收進左側選單最下面的「更多」 */
+  more?: boolean;
+};
+/** href：這個項目不是這一頁的檢視，而是連到模組自己的另一個網址（例如設定裡的「介紹頁」→ /pages）；到了那個網址，選單仍然算在這一頁底下 */
+export type RailItem = { key: string; label: string; en: string; icon: React.ReactNode; href?: string };
 
 export type MetaModule = {
   key: string;

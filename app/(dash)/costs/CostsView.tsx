@@ -195,7 +195,7 @@ function CostsInner({
               ) : (
                 <p className="muted small">{L("30 天內沒有要扣款的訂閱。", "No subscription charges in the next 30 days.")}</p>
               )}
-              <p className="muted small">{L("年付前 7 天、月付前 1 天會在 Telegram 提醒。", "Telegram reminds you 7 days before yearly charges and 1 day before monthly ones.")}</p>
+              <p className="muted small">{L("扣款前幾天起（月付 3 天、年付 7 天）每天在 Telegram 提醒一次，按訊息上的按鈕就停。", "Telegram reminds you daily from 3 days before monthly charges (7 for yearly) until you tap the button on the message.")}</p>
             </section>
           </div>
         </>

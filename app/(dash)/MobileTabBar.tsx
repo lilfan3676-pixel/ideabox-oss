@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useL } from "../LangProvider";
 import type { BellItem } from "./BellMenu";
 import { IconBell, IconBox, IconGrid, IconLogout, IconPulse, IconSettings } from "./icons";
-import { ALL_PAGES, AppearanceControls } from "./Nav";
+import { AppearanceControls, menuPages } from "./Nav";
 import { metaModules } from "@/lib/modules/meta";
 import { navHrefs } from "@/lib/accessLogic";
 import { useAccess } from "./AccessContext";
@@ -17,13 +17,14 @@ const MOBILE = "(max-width: 720px)";
  * 手機簡易版的底部分頁列：兩個常用分頁（預設監控、專案；模組可以換掉）、通知、更多。
  * 只在螢幕寬度 720px 以下顯示（CSS 控制）；其他頁面收在「更多」裡。
  */
-export function MobileTabBar({ items, logout }: { items: BellItem[]; logout: () => Promise<void> }) {
+export function MobileTabBar({ items, logout, slugs = [] }: { items: BellItem[]; logout: () => Promise<void>; slugs?: string[] }) {
   const pathname = usePathname();
   const router = useRouter();
   const L = useL();
   const [sheet, setSheet] = useState<"bell" | "more" | null>(null);
   const total = items.reduce((a, i) => a + i.count, 0);
-  const allowed = navHrefs(useAccess()); // 合夥人只看得到有權限的頁面；主人是 null＝全部
+  const access = useAccess();
+  const allowed = navHrefs(access); // 合夥人只看得到有權限的頁面；主人是 null＝全部
   const ok = (href: string) => !allowed || allowed.includes(href);
 
   // 手機第一次打開網站時直接到「監控」（之後在「更多」點點子庫仍可正常進入）
@@ -62,7 +63,8 @@ export function MobileTabBar({ items, logout }: { items: BellItem[]; logout: () 
     { href: "/monitor", label: "監控", en: "Monitor", icon: <IconPulse size={22} /> },
     { href: "/projects", label: "專案", en: "Projects", icon: <IconBox size={22} /> },
   ]).filter((t) => ok(t.href));
-  const MORE = ALL_PAGES.filter(([href]) => href !== "/monitor" && ok(href));
+  // 專案自己的工具（主人）不列在這裡，從專案頁的分頁進去
+  const MORE = menuPages(access, slugs).filter(([href]) => href !== "/monitor" && ok(href));
 
   return (
     <>

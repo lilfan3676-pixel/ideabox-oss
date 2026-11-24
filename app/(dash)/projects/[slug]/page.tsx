@@ -1,18 +1,17 @@
 import { notFound, redirect } from "next/navigation";
 import { requirePage } from "@/lib/auth";
-import { can, editsProject, seesProject } from "@/lib/accessLogic";
+import { can, seesProject } from "@/lib/accessLogic";
 import { taipeiDate } from "@/lib/dates";
 import { db, type Idea } from "@/lib/db";
-import { FOLDER_COLORS } from "@/lib/folderLogic";
 import { listOffice } from "@/lib/office";
 import { listProjects, type Milestone, type ProjectLog } from "@/lib/projects";
 import { productForSlug } from "@/lib/monitorLogic";
 import { monitorProducts } from "@/lib/monitor";
-import { modules, projectTabs } from "@/lib/modules/registry";
-import { listPosts } from "@/lib/posts";
+import { modules } from "@/lib/modules/registry";
+import { buildProjectTabs, projectColor } from "@/lib/projectTabs";
 import { listRadarReports, radarEnabled } from "@/lib/radar";
 import { ProjectDetail, type ProductData } from "./ProjectDetail";
-import { ProjectTabs, type TabDef } from "./ProjectTabs";
+import { ProjectTabs } from "./ProjectTabs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 「現在抓一次」話題雷達在背景跑
@@ -30,7 +29,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   // 發文排程搬到社群助手了：舊網址（Telegram 訊息裡的連結）轉過去
   if (tab === "posts") redirect(`/social?p=${project.slug}&view=posts`);
   const owner = access.owner;
-  const color = Object.values(FOLDER_COLORS)[index % Object.values(FOLDER_COLORS).length];
+  const color = projectColor(index);
   const now = Date.now();
   const since90 = taipeiDate(new Date(now - 90 * 86_400_000));
   const products = await monitorProducts().catch(() => []);
@@ -47,7 +46,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     return null;
   };
 
-  const [{ data: ms }, { data: logs }, ideasRes, { data: daily }, { data: services }, office, feedback, radar, postList] = await Promise.all([
+  const [{ data: ms }, { data: logs }, ideasRes, { data: daily }, { data: services }, office, feedback, radar, built] = await Promise.all([
     db().from("project_milestones").select("*").eq("project_id", project.id).order("due", { ascending: true }),
     db().from("project_logs").select("*").eq("project_id", project.id).order("at", { ascending: false }).limit(500),
     // 還沒執行 migration-013 時沒有 project_id 欄位，當作沒有點子
@@ -57,20 +56,13 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     owner ? listOffice(now) : { sessions: [], ready: false },
     feedbackOf(),
     can(access, "radar") ? listRadarReports(project.id) : { reports: [], ready: false },
-    listPosts(project.id),
+    buildProjectTabs(project, access),
   ]);
 
-  // 分頁：總覽（原本的內容）、發文排程（在社群助手，這裡是捷徑）
-  const tabDefs: TabDef[] = [
-    { key: "", label: ["總覽", "Overview"] },
-    { key: "posts", href: `/social?p=${project.slug}`, label: ["發文排程", "Posts"], count: postList.posts.filter((x) => x.status === "draft" || x.status === "scheduled").length },
-  ];
-  // 模組加的分頁（例如某個專案專用的名單）
-  const canEdit = editsProject(access, project.id);
-  const extra = await projectTabs({ project, access, canEdit, today: taipeiDate() });
+  // 分頁：總覽（原本的內容）、發文排程（在社群助手，這裡是捷徑）、模組加的（這個專案自己的工具，例如專用的名單）
+  const { tabs: tabDefs, extra } = built;
   const moved = extra.find((t) => t.key === tab && t.href);
   if (moved) redirect(moved.href!);
-  for (const t of extra) tabDefs.push({ key: t.key, label: t.label, count: t.count, href: t.href });
   const active = tabDefs.some((t) => t.key === tab) ? tab! : "";
   const panel: React.ReactNode = await extra.find((t) => t.key === active)?.render?.();
 

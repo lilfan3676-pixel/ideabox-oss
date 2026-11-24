@@ -23,7 +23,10 @@ describe("成本計算", () => {
     expect(shouldRemind(E({ cycle: "yearly", next_due: "2026-11-07" }), "2026-10-31")).toBe(true);
     expect(shouldRemind(E({ cycle: "yearly", next_due: "2026-11-08" }), "2026-10-31")).toBe(false);
     expect(shouldRemind(E({ next_due: "2026-11-01" }), "2026-10-31")).toBe(true);
-    expect(shouldRemind(E({ next_due: "2026-11-02" }), "2026-10-31")).toBe(false);
+    expect(shouldRemind(E({ next_due: "2026-11-03" }), "2026-10-31")).toBe(true); // 月付前 3 天起
+    expect(shouldRemind(E({ next_due: "2026-11-04" }), "2026-10-31")).toBe(false);
+    expect(shouldRemind(E({ next_due: "2026-11-01" }), "2026-10-31", "2026-10-31")).toBe(false); // 今天提醒過了
+    expect(shouldRemind(E({ next_due: "2026-11-01" }), "2026-10-31", "2026-10-30")).toBe(true); // 昨天提醒過，今天再提醒
     expect(shouldRemind(E({ next_due: "2026-11-01", reminded_for: "2026-11-01" }), "2026-10-31")).toBe(false);
     expect(shouldRemind(E({ next_due: "2026-11-01", active: false }), "2026-10-31")).toBe(false);
   });
@@ -117,7 +120,7 @@ describe("每日成本工作", () => {
     vi.setSystemTime(new Date("2026-10-31T13:00:00Z")); // 台北 10/31 21:00
   });
 
-  it("推扣款日、提醒一次、存匯率", async () => {
+  it("推扣款日、一天提醒一次、隔天再提醒、按了知道了就停、存匯率", async () => {
     tables.expenses.push(
       E({ id: "a", name: "Supabase Pro", amount: 25, currency: "USD", next_due: "2026-10-01" }), // 已過 → 11/01，明天扣款
       E({ id: "b", name: "Apple", cycle: "yearly", amount: 99, currency: "USD", next_due: "2026-12-20" }),
@@ -125,12 +128,28 @@ describe("每日成本工作", () => {
     const { runCostDaily } = await import("@/lib/costs");
     const r = await runCostDaily();
     expect(r).toMatchObject({ fx: 32.4, rolled: 1, reminded: 1 });
-    expect(tables.expenses.find((e) => e.id === "a")).toMatchObject({ next_due: "2026-11-01", reminded_for: "2026-11-01" });
+    expect(tables.expenses.find((e) => e.id === "a")).toMatchObject({ next_due: "2026-11-01", reminded_for: null });
     expect(sent[0]).toContain("Supabase Pro");
     expect(sent[0]).toContain("明天扣款");
     expect(JSON.parse(tables.settings.find((s) => s.key === "fx_usd_twd")!.value).rate).toBe(32.4);
     await runCostDaily();
-    expect(sent).toHaveLength(1);
+    expect(sent).toHaveLength(1); // 同一天不重複
+    vi.setSystemTime(new Date("2026-11-01T13:00:00Z")); // 隔天（扣款當天）
+    await runCostDaily();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toContain("今天扣款");
+    // 按「知道了」：這期不再提醒
+    const { handleCostButton } = await import("@/lib/costs");
+    expect((await handleCostButton("cx:k:" + tables.expenses.find((e) => e.name === "Supabase Pro")!.id)).done).toBe(true);
+    vi.setSystemTime(new Date("2026-11-01T15:00:00Z"));
+    tables.settings.splice(0, tables.settings.length, ...tables.settings.filter((s) => s.key !== "cost_reminded")); // 就算沒有「今天提醒過」的紀錄也不該再傳
+    await runCostDaily();
+    expect(sent).toHaveLength(2);
+    // 按「已經取消訂閱」：標成停用
+    const b = tables.expenses.find((e) => e.name === "Apple")!;
+    await handleCostButton("cx:c:" + b.id);
+    expect(b.active).toBe(false);
+    expect((await handleCostButton("cx:k:亂寫")).done).toBe(false);
     vi.useRealTimers();
   });
 });

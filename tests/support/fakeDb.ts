@@ -74,6 +74,7 @@ class Query {
   upsert(p: Row | Row[], _o?: unknown) { this.op = "upsert"; this.payload = p; return this; }
   delete() { this.op = "delete"; return this; }
   eq(c: string, v: any) { this.filters.push((r) => r[c] === v); return this; }
+  is(c: string, v: any) { this.filters.push((r) => (r[c] ?? null) === v); return this; }
   neq(c: string, v: any) { this.filters.push((r) => r[c] !== v); return this; }
   like(c: string, pattern: string) {
     const re = new RegExp("^" + pattern.split("%").map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*") + "$");

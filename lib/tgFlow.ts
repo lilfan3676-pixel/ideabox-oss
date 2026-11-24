@@ -294,6 +294,16 @@ export async function handleCallback(cb: TgCallback) {
     return;
   }
 
+  // 續約提醒：知道了／已經取消訂閱
+  if (data.startsWith("cx:")) {
+    const { handleCostButton } = await import("./costs");
+    const r = await handleCostButton(data);
+    await answerCallback(cb.id, r.toast || undefined);
+    if (r.done) await setButtons(chatId, msgId, null);
+    if (r.text) await sendMessage(chatId, r.text, { replyTo: msgId });
+    return;
+  }
+
   // 每晚進度確認：過期的待辦做了／延期（下一步的按鈕是舊訊息留下來的，照樣認得）
   if (data.startsWith("ck:")) {
     const { handleCheckinButton } = await import("./checkin");
