@@ -258,7 +258,7 @@ async function PartnersSection() {
   return (
     <PartnersPanel
       members={members}
-      projects={projects.filter((p) => p.status !== "done").map((p) => ({ id: p.id, name: p.name }))}
+      projects={projects.filter((p) => p.status !== "done").map((p) => ({ id: p.id, name: p.name, slug: p.slug }))}
       devices={devices.map((d) => ({ id: d.id, name: d.name, member_id: d.member_id ?? null, push_token: d.push_token, last_seen_at: d.last_seen_at }))}
     />
   );

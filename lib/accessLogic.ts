@@ -13,7 +13,24 @@ const CORE_MEMBER_PAGES = [
 ] as const;
 
 /** 可以勾給合夥人的畫面：核心的＋模組自己的頁面（lib/modules/memberPages.ts） */
-export const MEMBER_PAGES: readonly { key: PageKey; zh: string; en: string }[] = [...CORE_MEMBER_PAGES, ...MODULE_MEMBER_PAGES];
+export const MEMBER_PAGES: readonly MemberPage[] = [...CORE_MEMBER_PAGES, ...MODULE_MEMBER_PAGES];
+
+export type MemberPage = { key: PageKey; zh: string; en: string; project?: string; shortZh?: string; shortEn?: string };
+
+/** 設定頁的勾選怎麼分組：shared＝跨專案的畫面；tools＝某個專案自己的工具，照專案短名一組（順序照清單） */
+export function groupMemberPages(pages: readonly MemberPage[] = MEMBER_PAGES): { shared: MemberPage[]; tools: { project: string; pages: MemberPage[] }[] } {
+  const shared: MemberPage[] = [];
+  const tools: { project: string; pages: MemberPage[] }[] = [];
+  for (const p of pages) {
+    if (!p.project) shared.push(p);
+    else {
+      const g = tools.find((t) => t.project === p.project);
+      if (g) g.pages.push(p);
+      else tools.push({ project: p.project, pages: [p] });
+    }
+  }
+  return { shared, tools };
+}
 
 export type PageKey = (typeof CORE_MEMBER_PAGES)[number]["key"] | (typeof MODULE_MEMBER_PAGES)[number]["key"];
 const PAGE_KEYS = MEMBER_PAGES.map((p) => p.key) as readonly string[];

@@ -36,3 +36,17 @@ describe("左側選單的分法", () => {
     expect(pageOf(PAGES, "/")).toBeUndefined();
   });
 });
+
+import { groupMemberPages, type MemberPage } from "@/lib/accessLogic";
+
+describe("合夥人設定：畫面勾選的分組", () => {
+  const page = (key: string, project?: string) => ({ key, zh: key, en: key, project }) as unknown as MemberPage;
+  it("沒有專案的是共用的畫面；有專案的照專案一組，順序照清單", () => {
+    const g = groupMemberPages([page("projects"), page("cafe", "fit"), page("grants"), page("list", "shop"), page("growth", "fit")]);
+    expect(g.shared.map((p) => p.key)).toEqual(["projects", "grants"]);
+    expect(g.tools.map((t) => [t.project, t.pages.map((p) => p.key)])).toEqual([["fit", ["cafe", "growth"]], ["shop", ["list"]]]);
+  });
+  it("清單裡沒有專案的工具時，tools 是空的（公開版）", () => {
+    expect(groupMemberPages([page("projects")]).tools).toEqual([]);
+  });
+});

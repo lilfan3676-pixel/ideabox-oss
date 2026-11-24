@@ -1759,6 +1759,11 @@ button.project-link-btn.unset:not(:disabled):hover { opacity: .8; }
 .pt-check { display: flex; gap: 8px; align-items: center; padding: 7px 10px; border-radius: 10px; background: var(--field); font-size: 13.5px; cursor: pointer; }
 /* 全站 input 是 width: 100%，勾選框要改回原本大小 */
 .pt-check input { margin: 0; accent-color: var(--accent); width: auto; flex: none; padding: 0; }
+/* 「能進哪些畫面」的分組：共用的畫面／專案自己的工具（一個專案一列） */
+.pt-sub { font-size: 12px; color: var(--muted); margin: 6px 0 -2px; }
+.pt-group { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: start; }
+.pt-group-name { font-size: 13.5px; font-weight: 600; padding-top: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) { .pt-group { grid-template-columns: 1fr; gap: 4px; } }
 /* 面板是直向 flex，按鈕與切換鈕不要被拉成整排寬 */
 .partners-edit .seg, .partners-list > .btn { align-self: flex-start; }
 .pt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }

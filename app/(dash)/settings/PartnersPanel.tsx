@@ -3,13 +3,14 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useL } from "@/app/LangProvider";
-import { MEMBER_PAGES, MEMBER_TEMPLATES, type Member } from "@/lib/accessLogic";
+import { MEMBER_TEMPLATES, groupMemberPages, type Member } from "@/lib/accessLogic";
 import { AppPairing } from "./AppPairing";
 import { removeAppDevice } from "./appActions";
 import { deleteMemberAction, inviteMemberAction, resetInviteAction, setMemberActiveAction, updateMemberAction, type MemberForm, type MemberResult } from "./memberActions";
 
 type Device = { id: string; name: string; member_id: string | null; push_token: string | null; last_seen_at: string };
-type Proj = { id: string; name: string };
+type Proj = { id: string; name: string; slug: string };
+const GROUPS = groupMemberPages();
 
 const AVATAR = ["#4aa3a2", "#c98a52", "#7563f0", "#d6455d", "#1f9d6b", "#c97a10"];
 const fmt = (iso: string) => new Date(iso).toLocaleString("zh-TW", { timeZone: "Asia/Taipei", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -178,14 +179,34 @@ function MemberEditor({
       </div>
 
       <h4>{L("能進哪些畫面", "Screens")}</h4>
+      {GROUPS.tools.length > 0 && <div className="pt-sub">{L("共用的畫面", "Shared screens")}</div>}
       <div className="pt-checks">
-        {MEMBER_PAGES.map((p) => (
+        {GROUPS.shared.map((p) => (
           <label key={p.key} className="pt-check">
             <input type="checkbox" checked={v.pages.includes(p.key)} onChange={() => toggle("pages", p.key)} />
             {L(p.zh, p.en)}
           </label>
         ))}
       </div>
+      {GROUPS.tools.length > 0 && (
+        <>
+          <div className="pt-sub">{L("專案自己的工具", "Project tools")}</div>
+          {GROUPS.tools.map((g) => (
+            <div key={g.project} className="pt-group">
+              <div className="pt-group-name">{projects.find((p) => p.slug === g.project)?.name ?? g.project}</div>
+              <div className="pt-checks">
+                {g.pages.map((p) => (
+                  <label key={p.key} className="pt-check">
+                    <input type="checkbox" checked={v.pages.includes(p.key)} onChange={() => toggle("pages", p.key)} />
+                    {L(p.shortZh ?? p.zh, p.shortEn ?? p.en)}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+          <p className="muted small">{L("工具跟專案分開勾：只勾工具、沒勾那個專案也可以（他會從左側選單進去）。", "Tools are ticked separately from projects: a tool without its project still works (they open it from the side menu).")}</p>
+        </>
+      )}
       <p className="muted small">🔒 {L("成本、辦公室、設定，以及上面沒列出的頁面：永遠只有你看得到", "Costs, office, settings and any page not listed above are always yours only")}</p>
 
       <h4>{L("權限", "Permission")}</h4>
